@@ -22,6 +22,50 @@ class MockState:
         self.filled = []
         self.last_orno = 10000
         self.lock = threading.Lock()
+        
+        # 백테스트 데이터 로드
+        self.backtest_data = []
+        self.backtest_index = 0
+        self.load_backtest_data()
+
+    def load_backtest_data(self):
+        import csv
+        try:
+            csv_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'backtest', '042660_minute_data_full.csv')
+            raw_prices = []
+            with open(csv_path, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    raw_prices.append(float(row['Close']))
+            
+            if not raw_prices: return
+
+            # 1분을 1초로 압축하여 재생하며, 
+            # 1/3 구간은 원본(1배), 1/3 구간은 변동성 2배(급락/급등), 1/3 구간은 역방향 -2배(미러링 급변)로 생성
+            self.backtest_data = [raw_prices[0]]
+            current_price = raw_prices[0]
+            chunk_size = max(1, len(raw_prices) // 3)
+
+            for i in range(1, len(raw_prices)):
+                delta = raw_prices[i] - raw_prices[i-1]
+                
+                if i < chunk_size:
+                    multiplier = 1.0    # 원본 그대로
+                elif i < chunk_size * 2:
+                    multiplier = 2.0    # 2배 변동성 구간
+                else:
+                    multiplier = -2.0   # -2배 변동성 (역방향) 구간
+
+                current_price += (delta * multiplier)
+                if current_price < 500: current_price = 500 # 상장폐지 방지
+                
+                # 호가 단위 100원 맞추기
+                current_price = round(current_price / 100) * 100
+                self.backtest_data.append(current_price)
+
+            print(f"Loaded {len(self.backtest_data)} rows. Phases: 1x, 2x, -2x applied.")
+        except Exception as e:
+            print("Backtest data load failed:", e)
 
     def get_new_orno(self):
         self.last_orno += 1
@@ -30,21 +74,25 @@ class MockState:
     def tick(self):
         """1초마다 가격을 변동시키고 지정가를 체결시킴"""
         with self.lock:
-            # 1. 가격 부드러운 랜덤 워크 (Momentum-based)
-            for sym in self.prices:
-                # 이전 추세를 80% 유지하고, 새로운 노이즈(±0.1%)를 추가
-                noise = random.uniform(-0.001, 0.001)
-                self.momentum[sym] = self.momentum[sym] * 0.8 + noise
+            # 1. 가격 갱신 (백테스트 데이터 우선)
+            if self.backtest_data:
+                self.prices["042660"] = self.backtest_data[self.backtest_index]
+                self.backtest_index = (self.backtest_index + 1) % len(self.backtest_data)
                 
-                new_p = self.prices[sym] * (1 + self.momentum[sym])
-                
-                # 호가 단위 맞추기
-                if sym == "042660":
-                    new_p = round(new_p / 100) * 100
-                else:
-                    new_p = round(new_p, 1)
-                
-                self.prices[sym] = new_p
+                # ONDO는 그냥 랜덤 워크 유지
+                self.momentum["ONDO"] = self.momentum["ONDO"] * 0.8 + random.uniform(-0.001, 0.001)
+                self.prices["ONDO"] = round(self.prices["ONDO"] * (1 + self.momentum["ONDO"]), 1)
+            else:
+                # 백테스트 데이터가 없으면 기존 부드러운 랜덤 워크
+                for sym in self.prices:
+                    noise = random.uniform(-0.001, 0.001)
+                    self.momentum[sym] = self.momentum[sym] * 0.8 + noise
+                    new_p = self.prices[sym] * (1 + self.momentum[sym])
+                    if sym == "042660":
+                        new_p = round(new_p / 100) * 100
+                    else:
+                        new_p = round(new_p, 1)
+                    self.prices[sym] = new_p
 
             # 2. 미체결 주문 매칭
             open_orders = [o for o in self.orders if o["status"] == "open"]
