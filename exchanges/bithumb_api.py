@@ -8,10 +8,10 @@ from .base import BaseExchange
 logger = logging.getLogger("BithumbAPI")
 
 class BithumbClient(BaseExchange):
-    def __init__(self, api_key: str, secret_key: str):
+    def __init__(self, api_key: str, secret_key: str, base_url: str = "https://api.bithumb.com"):
         self.api_key = api_key
         self.secret_key = secret_key
-        self.base_url = "https://api.bithumb.com"
+        self.base_url = base_url
 
     def _get_headers(self, query_hash=None):
         payload = {
@@ -79,3 +79,16 @@ class BithumbClient(BaseExchange):
 
     def cancel_order(self, order_id: tuple):
         pass
+
+    def buy_limit_order(self, symbol: str, price: float, quantity: float):
+        url = f"{self.base_url}/trade/place"
+        import requests
+        return requests.post(url, data={"order_currency": symbol, "payment_currency": "KRW", "units": quantity, "price": price, "type": "bid"}).json()
+        
+    def sell_limit_order(self, symbol: str, price: float, quantity: float):
+        url = f"{self.base_url}/trade/place"
+        import requests
+        return requests.post(url, data={"order_currency": symbol, "payment_currency": "KRW", "units": quantity, "price": price, "type": "ask"}).json()
+        
+    def get_open_orders(self, symbol: str):
+        return {"status": "0000", "data": []}
