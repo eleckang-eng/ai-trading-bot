@@ -13,9 +13,12 @@ app = FastAPI(title="Mock Exchange Server")
 # 실제 KIS/빗썸 서버처럼 동작하기 위한 내부 상태
 class MockState:
     def __init__(self):
-        self.prices = {"042660": 30000, "ONDO": 1000}
+        # 한화오션(042660) 실제가와 비슷한 83500원에서 시작
+        self.prices = {"042660": 83500.0, "ONDO": 1000.0}
+        # 모멘텀(추세) 속성을 추가하여 가격이 부드럽게 이어지도록 (왔다갔다 방지)
+        self.momentum = {"042660": 0.0, "ONDO": 0.0}
         self.balances = {"kis_krw": 10000000, "bithumb_krw": 10000000}
-        self.orders = []      # {"id": str, "exchange": str, "symbol": str, "side": str, "price": int/float, "qty": float, "status": "open"}
+        self.orders = []
         self.filled = []
         self.last_orno = 10000
         self.lock = threading.Lock()
@@ -27,15 +30,20 @@ class MockState:
     def tick(self):
         """1초마다 가격을 변동시키고 지정가를 체결시킴"""
         with self.lock:
-            # 1. 가격 랜덤 워크
+            # 1. 가격 부드러운 랜덤 워크 (Momentum-based)
             for sym in self.prices:
-                change_pct = random.uniform(-0.005, 0.005) # -0.5% ~ +0.5%
-                new_p = self.prices[sym] * (1 + change_pct)
-                # 호가 단위 맞추기 (단순화)
+                # 이전 추세를 80% 유지하고, 새로운 노이즈(±0.1%)를 추가
+                noise = random.uniform(-0.001, 0.001)
+                self.momentum[sym] = self.momentum[sym] * 0.8 + noise
+                
+                new_p = self.prices[sym] * (1 + self.momentum[sym])
+                
+                # 호가 단위 맞추기
                 if sym == "042660":
                     new_p = round(new_p / 100) * 100
                 else:
                     new_p = round(new_p, 1)
+                
                 self.prices[sym] = new_p
 
             # 2. 미체결 주문 매칭
