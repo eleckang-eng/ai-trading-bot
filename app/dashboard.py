@@ -91,23 +91,22 @@ with st.sidebar:
     # ── 거래소 / 모드 선택 ───────────────────────────
     default_idx = 3
     if curr_ex == "kis":
-        if curr_paper:  default_idx = 4
-        elif curr_mock: default_idx = 3
+        if curr_paper:  default_idx = 3
+        elif curr_mock: default_idx = 2
         else:           default_idx = 0
     else:
-        default_idx = 5 if curr_paper else 1
+        default_idx = 4 if curr_paper else 1
 
-    exchange_choice = st.radio("거래소 및 투자 모드", [
+    exchange_choice = st.selectbox("거래소 및 투자 모드", [
         "🔴 한국투자증권 (실전)",
         "🔴 빗썸 (실전)",
-        "────────────────────",
         "🟢 한국투자증권 (모의 계좌)",
         "🧪 한국투자증권 (테스트)",
         "🧪 빗썸 (테스트)"
     ], index=default_idx)
 
     if st.button("🔄 모드 적용", use_container_width=True):
-        if "─" in exchange_choice:
+        if False:
             st.warning("구분선은 선택할 수 없습니다.")
         else:
             new_exchange     = "bithumb" if "빗썸" in exchange_choice else "kis"
