@@ -3,6 +3,18 @@ import requests
 import pandas as pd
 import time
 
+# =============================================================================
+# [대규모 UX/UI 개선 히스토리 및 참고사항 - 2026-09-20]
+# 1. 모바일 레이아웃 강어:
+#    - Streamlit 기본 속성으로 인해 창 폭이 줄어들면 st.columns()가 1열(세로)로 풀리는 현상 발생.
+#    - 이를 원천 방어하기 위해 <style> 내부에 flex-direction: row !important; 와 
+#      flex-wrap: nowrap !important; CSS를 추가. 어떠한 경우에도 50% 너비 2열로 고정됨.
+# 2. 그리드 설정창 자동 접힘 (Expander):
+#    - 주문 생성 탭(tab_order)의 파라미터 입력부 전체를 st.expander()로 감쌈.
+#    - '균등/계단식 그리드 생성' 버튼 클릭 시 st.session_state.show_grid_preview가 True로 변경되며,
+#      expanded=not show_grid_preview 속성에 의해 설정창이 즉시 접히고(팝업아웃 효과) 표가 화면을 채움.
+# =============================================================================
+
 # 페이지 설정
 st.set_page_config(page_title="AI 핑퐁 봇", page_icon="📈", layout="wide", initial_sidebar_state="auto")
 
@@ -277,110 +289,111 @@ with tab_order:
             except Exception as e:
                 st.error(f"서버조회 실패: {e}")
 
-        # 2. 매도 간격 / 매도주문 수량 (입력창 가로 2개)
-        col_sell_1, col_sell_2 = st.columns(2)
-        with col_sell_1:
-            take_profit = st.number_input("매도 간격 (수익폭)", min_value=1, value=int(ex_cfg.get("take_profit", default_profit)), step=step_val)
-        with col_sell_2:
-            sell_count  = st.number_input("매도주문 개수", min_value=1, max_value=50, value=10, step=1)
+        with st.expander("⚙️ 그리드 파라미터 설정 (펼치기/접기)", expanded=not st.session_state.get("show_grid_preview", False)):
+            # 2. 매도 간격 / 매도주문 수량 (입력창 가로 2개)
+            col_sell_1, col_sell_2 = st.columns(2)
+            with col_sell_1:
+                take_profit = st.number_input("매도 간격 (수익폭)", min_value=1, value=int(ex_cfg.get("take_profit", default_profit)), step=step_val)
+            with col_sell_2:
+                sell_count  = st.number_input("매도주문 개수", min_value=1, max_value=50, value=10, step=1)
 
-        # 3. 기준가 / 1회 매수 수량 (입력창 가로 2개)
-        cached_price = st.session_state.get("manual_price", 0)
-        base_price_val = float(ex_cfg.get("base_price", 0) or cached_price)
-    
-        col_base_1, col_base_2 = st.columns(2)
-        with col_base_1:
-            base_price = st.number_input("기준가", min_value=0.0, value=base_price_val, step=float(step_val), help="0 입력 시 현재가로 자동 적용")
-        with col_base_2:
-            order_quantity = st.number_input("1회 매수 수량", min_value=1, value=int(ex_cfg.get("order_quantity", default_qty)), step=1)
+            # 3. 기준가 / 1회 매수 수량 (입력창 가로 2개)
+            cached_price = st.session_state.get("manual_price", 0)
+            base_price_val = float(ex_cfg.get("base_price", 0) or cached_price)
+        
+            col_base_1, col_base_2 = st.columns(2)
+            with col_base_1:
+                base_price = st.number_input("기준가", min_value=0.0, value=base_price_val, step=float(step_val), help="0 입력 시 현재가로 자동 적용")
+            with col_base_2:
+                order_quantity = st.number_input("1회 매수 수량", min_value=1, value=int(ex_cfg.get("order_quantity", default_qty)), step=1)
 
-        # 4. 매수 간격 / 매수주문 수량 (입력창 가로 2개)
-        col_buy_1, col_buy_2 = st.columns(2)
-        with col_buy_1:
-            grid_interval = st.number_input("매수 간격 (하락폭)", min_value=1, value=int(ex_cfg.get("grid_interval", default_grid)), step=step_val)
-        with col_buy_2:
-            buy_count     = st.number_input("매수주문 개수", min_value=1, max_value=50, value=10, step=1)
+            # 4. 매수 간격 / 매수주문 수량 (입력창 가로 2개)
+            col_buy_1, col_buy_2 = st.columns(2)
+            with col_buy_1:
+                grid_interval = st.number_input("매수 간격 (하락폭)", min_value=1, value=int(ex_cfg.get("grid_interval", default_grid)), step=step_val)
+            with col_buy_2:
+                buy_count     = st.number_input("매수주문 개수", min_value=1, max_value=50, value=10, step=1)
 
-        # 5. 주문 방향 (라디오 버튼 3개)
-        grid_direction = st.radio("주문 방향", ["매수/매도 모두", "매수만", "매도만"], index=0, horizontal=True)
+            # 5. 주문 방향 (라디오 버튼 3개)
+            grid_direction = st.radio("주문 방향", ["매수/매도 모두", "매수만", "매도만"], index=0, horizontal=True)
 
-        # ── 그리드 생성 헬퍼 ──
-        def _calc_base_price():
-            if base_price > 0: return base_price
-            if cached_price > 0: return cached_price
-            return 80000 if is_kis else 1000
+            # ── 그리드 생성 헬퍼 ──
+            def _calc_base_price():
+                if base_price > 0: return base_price
+                if cached_price > 0: return cached_price
+                return 80000 if is_kis else 1000
 
-        def _generate_grid(bp, qty):
-            sell_list, buy_list = [], []
-            if grid_direction in ["매도만", "매수/매도 모두"]:
-                for i in range(1, int(sell_count) + 1):
-                    s_price = bp + (take_profit * i)
-                    s_price = (s_price // 1000) * 1000 + 900 if is_kis else round(s_price, 2)
-                    sell_list.append({"선택": True, "방향": "매도", "가격": int(s_price), "수량": int(qty)})
-            if grid_direction in ["매수만", "매수/매도 모두"]:
-                for i in range(1, int(buy_count) + 1):
-                    b_price = bp - (grid_interval * i)
-                    if b_price <= 0: break
-                    b_price = (b_price // 1000) * 1000 + 100 if is_kis else round(b_price, 2)
-                    buy_list.append({"선택": True, "방향": "매수", "가격": int(b_price), "수량": int(qty)})
-            return sell_list, buy_list
+            def _generate_grid(bp, qty):
+                sell_list, buy_list = [], []
+                if grid_direction in ["매도만", "매수/매도 모두"]:
+                    for i in range(1, int(sell_count) + 1):
+                        s_price = bp + (take_profit * i)
+                        s_price = (s_price // 1000) * 1000 + 900 if is_kis else round(s_price, 2)
+                        sell_list.append({"선택": True, "방향": "매도", "가격": int(s_price), "수량": int(qty)})
+                if grid_direction in ["매수만", "매수/매도 모두"]:
+                    for i in range(1, int(buy_count) + 1):
+                        b_price = bp - (grid_interval * i)
+                        if b_price <= 0: break
+                        b_price = (b_price // 1000) * 1000 + 100 if is_kis else round(b_price, 2)
+                        buy_list.append({"선택": True, "방향": "매수", "가격": int(b_price), "수량": int(qty)})
+                return sell_list, buy_list
 
-        # 6. 균등그리드생성 (버튼 1개)
-        if st.button("📝 균등 그리드 생성", use_container_width=True):
-            bp = _calc_base_price()
-            sell_list, buy_list = _generate_grid(bp, order_quantity)
-            st.session_state.grid_sell_list = sell_list
-            st.session_state.grid_buy_list = buy_list
-            st.session_state.show_grid_preview = True
-            st.session_state.confirm_batch_order = False
+            # 6. 균등그리드생성 (버튼 1개)
+            if st.button("📝 균등 그리드 생성", use_container_width=True):
+                bp = _calc_base_price()
+                sell_list, buy_list = _generate_grid(bp, order_quantity)
+                st.session_state.grid_sell_list = sell_list
+                st.session_state.grid_buy_list = buy_list
+                st.session_state.show_grid_preview = True
+                st.session_state.confirm_batch_order = False
+                st.rerun()
 
-        # ── 계단형 그리드 생성 ─────────────────────────
-        st.caption("계단형: 지정한 방향에만 수량을 증액하는 그리드")
-        stair_c1, stair_c2 = st.columns(2)
-        with stair_c1:
-            stair_steps = st.number_input("증액 계단 수량", min_value=1, max_value=10, value=3, step=1, help="몇 단계마다 수량이 증액되는지")
-        with stair_c2:
-            stair_add_qty = st.number_input("증액 수량", min_value=1, value=5 if is_kis else 500, step=1, help="계단 한 단계당 추가되는 수량")
+            # ── 계단형 그리드 생성 ─────────────────────────
+            st.caption("계단형: 지정한 방향에만 수량을 증액하는 그리드")
+            stair_c1, stair_c2 = st.columns(2)
+            with stair_c1:
+                stair_steps = st.number_input("증액 계단 수량", min_value=1, max_value=10, value=3, step=1, help="몇 단계마다 수량이 증액되는지")
+            with stair_c2:
+                stair_add_qty = st.number_input("증액 수량", min_value=1, value=5 if is_kis else 500, step=1, help="계단 한 단계당 추가되는 수량")
 
-        stair_direction = st.radio("계단 적용 방향", ["매수매도계단", "매수계단", "매도계단"], index=1, horizontal=True)
+            stair_direction = st.radio("계단 적용 방향", ["매수매도계단", "매수계단", "매도계단"], index=1, horizontal=True)
 
-        # 8. 계단형그리드생성 (버튼 1개)
-        if st.button("📈 계단형 그리드 생성", use_container_width=True):
-            bp = _calc_base_price()
-            sell_list, buy_list = [], []
-            if grid_direction in ["매도만", "매수/매도 모두"]:
-                for i in range(1, int(sell_count) + 1):
-                    s_price = bp + (take_profit * i)
-                    s_price = (s_price // 1000) * 1000 + 900 if is_kis else round(s_price, 2)
-                
-                    if stair_direction in ["매수매도계단", "매도계단"]:
-                        stair_level = (i - 1) // int(stair_steps)
-                        qty = int(order_quantity) + (stair_level * int(stair_add_qty))
-                    else:
-                        qty = int(order_quantity)
+            # 8. 계단형그리드생성 (버튼 1개)
+            if st.button("📈 계단형 그리드 생성", use_container_width=True):
+                bp = _calc_base_price()
+                sell_list, buy_list = [], []
+                if grid_direction in ["매도만", "매수/매도 모두"]:
+                    for i in range(1, int(sell_count) + 1):
+                        s_price = bp + (take_profit * i)
+                        s_price = (s_price // 1000) * 1000 + 900 if is_kis else round(s_price, 2)
                     
-                    sell_list.append({"선택": True, "방향": "매도", "가격": int(s_price), "수량": qty})
-                
-            if grid_direction in ["매수만", "매수/매도 모두"]:
-                for i in range(1, int(buy_count) + 1):
-                    b_price = bp - (grid_interval * i)
-                    if b_price <= 0: break
-                    b_price = (b_price // 1000) * 1000 + 100 if is_kis else round(b_price, 2)
-                
-                    if stair_direction in ["매수매도계단", "매수계단"]:
-                        stair_level = (i - 1) // int(stair_steps)
-                        qty = int(order_quantity) + (stair_level * int(stair_add_qty))
-                    else:
-                        qty = int(order_quantity)
+                        if stair_direction in ["매수매도계단", "매도계단"]:
+                            stair_level = (i - 1) // int(stair_steps)
+                            qty = int(order_quantity) + (stair_level * int(stair_add_qty))
+                        else:
+                            qty = int(order_quantity)
+                        
+                        sell_list.append({"선택": True, "방향": "매도", "가격": int(s_price), "수량": qty})
                     
-                    buy_list.append({"선택": True, "방향": "매수", "가격": int(b_price), "수량": qty})
+                if grid_direction in ["매수만", "매수/매도 모두"]:
+                    for i in range(1, int(buy_count) + 1):
+                        b_price = bp - (grid_interval * i)
+                        if b_price <= 0: break
+                        b_price = (b_price // 1000) * 1000 + 100 if is_kis else round(b_price, 2)
+                    
+                        if stair_direction in ["매수매도계단", "매수계단"]:
+                            stair_level = (i - 1) // int(stair_steps)
+                            qty = int(order_quantity) + (stair_level * int(stair_add_qty))
+                        else:
+                            qty = int(order_quantity)
+                        
+                        buy_list.append({"선택": True, "방향": "매수", "가격": int(b_price), "수량": qty})
 
-            st.session_state.grid_sell_list = sell_list
-            st.session_state.grid_buy_list = buy_list
-            st.session_state.show_grid_preview = True
-            st.session_state.confirm_batch_order = False
-
-    pass
+                st.session_state.grid_sell_list = sell_list
+                st.session_state.grid_buy_list = buy_list
+                st.session_state.show_grid_preview = True
+                st.session_state.confirm_batch_order = False
+                st.rerun()
 
 with tab_settings:
     # ── 시스템 공통 설정 ──
