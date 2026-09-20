@@ -170,15 +170,16 @@ def sync_orders():
 
 @app.post("/system/restart")
 def restart_server():
-    """서버 강제 재시작"""
-    import os, sys, threading, time
+    """봇 코어 루프 재시작"""
+    import threading, time
     def _restart():
-        time.sleep(1)
-        # uvicorn 프로세스를 완전히 새로 띄움
-        os.execv(sys.executable, [sys.executable, "-m", "uvicorn", "server.api_server:app", "--host", "0.0.0.0", "--port", "8000"])
+        trader.stop()
+        time.sleep(2)  # 스레드 종료 및 정리 대기
+        # 설정 등을 다시 불러오기 위해 필요하다면 여기서 로드
+        trader.start()
     
     threading.Thread(target=_restart).start()
-    return {"status": "success", "message": "서버 재시작 중..."}
+    return {"status": "success", "message": "봇 코어 루프 재시작 중..."}
 
 if __name__ == "__main__":
     uvicorn.run("api_server:app", host="0.0.0.0", port=8000, reload=True)
