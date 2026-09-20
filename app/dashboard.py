@@ -831,6 +831,10 @@ with tab1:
         if view_mode == "📉 차트 뷰":
             import plotly.graph_objects as go
 
+            # 차트뷰에서는 같은 가격대의 수량을 합산하여 깔끔하게 표시
+            chart_sell_df = sell_df.groupby("avg_price", as_index=False)["quantity"].sum() if not sell_df.empty else sell_df
+            chart_buy_df  = buy_df.groupby("avg_price", as_index=False)["quantity"].sum() if not buy_df.empty else buy_df
+
             fig = go.Figure()
             # 실시간 서버 현재가를 우선 사용하고, 없으면 수동 설정 가격 사용
             chart_current_price = 0
@@ -840,7 +844,7 @@ with tab1:
                 chart_current_price = st.session_state.get("manual_price", 0)
 
             # 매도 그리드 수평선 (파란색, 얇은 점선)
-            for _, row in sell_df.iterrows():
+            for _, row in chart_sell_df.iterrows():
                 p = int(row["avg_price"])
                 q = int(row["quantity"])
                 fig.add_shape(type="line", x0=0, x1=1, xref="paper",
@@ -849,7 +853,7 @@ with tab1:
                                    showarrow=False, font=dict(color="#4a90e2", size=11), xanchor="left")
 
             # 매수 그리드 수평선 (빨간색, 얇은 점선)
-            for _, row in buy_df.iterrows():
+            for _, row in chart_buy_df.iterrows():
                 p = int(row["avg_price"])
                 q = int(row["quantity"])
                 fig.add_shape(type="line", x0=0, x1=1, xref="paper",
