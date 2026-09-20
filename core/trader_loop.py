@@ -397,6 +397,46 @@ class TraderLoop:
         logger.info(f"[{mode_key}] 포지션 및 미체결 주문 일괄 취소 (DB 초기화)")
         return {"status": "success", "message": f"미체결 주문 및 포지션이 초기화되었습니다. ({mode_key})"}
 
+    def _place_pingpong_order(self, exchange, symbol, filled_side, filled_price, qty, mode_key):
+        """체결된 주문의 반대 방향으로 핑퐁 주문(그리드 간격 * 2)을 생성하고 틱 보정 규칙을 적용합니다."""
+        ex_cfg = self.config.get(exchange, {})
+        grid_interval = ex_cfg.get("grid_interval", 2000 if exchange == "kis" else 10)
+        is_kis = exchange == "kis"
+        
+        # 핑퐁 타겟 가격 계산 (구간의 2배: * 2)
+        pingpong_margin = grid_interval * 2
+        
+        target_price = 0
+        side_to_place = "buy"
+        
+        if filled_side == "buy":
+            # 매수 체결 -> 위로(*2) 매도 핑퐁
+            target_price = float(filled_price) + pingpong_margin
+            if is_kis:
+                target_price = round((target_price - 900) / 1000) * 1000 + 900
+            else:
+                target_price = round((target_price - 9) / 10) * 10 + 9
+            side_to_place = "sell"
+            
+        elif filled_side == "sell":
+            # 매도 체결 -> 아래로(*2) 매수 핑퐁
+            target_price = float(filled_price) - pingpong_margin
+            if target_price <= 0:
+                logger.warning(f"[핑퐁 오류] 계산된 매수 가격이 0 이하입니다: {target_price}")
+                return
+            if is_kis:
+                target_price = round((target_price - 100) / 1000) * 1000 + 100
+            else:
+                target_price = round((target_price - 1) / 10) * 10 + 1
+            side_to_place = "buy"
+
+        logger.info(f"[{exchange} 핑퐁] {filled_side} 체결({filled_price}) 감지 -> {side_to_place} 핑퐁 주문({target_price}) 전송")
+        
+        # 실제 주문 및 DB 기록 (API Rate Limit 방어를 위해 1초 대기)
+        import time
+        time.sleep(1.0)
+        self.manual_order(side_to_place, qty, target_price)
+
     def sync_orders(self):
         """실제 거래소의 미체결 내역 및 체결 내역을 이중 조회하여 DB와 동기화합니다."""
         mode_key = self._get_mode_key()
@@ -451,10 +491,13 @@ class TraderLoop:
                             else:
                                 # 미체결에 없다면 처리(체결/취소)된 상태이므로 DB에서 정리하고 다음 호가로 확장
                                 if order_id in filled_odnos:
-                                    logger.info(f"[한투 동기화] 체결 확인됨 (ODNO: {order_id}) -> DB 이동")
+                                    logger.info(f"[한투 동기화] 체결 확인됨 (ODNO: {order_id}) -> DB 이동 및 핑퐁 생성")
                                     self.record_trade(pos['symbol'], pos['quantity'], pos['avg_price'], pos['side'], mode_key, "filled")
                                     self.delete_position(pos['id'], cancel_api=False)
                                     removed_count += 1
+                                    
+                                    # 핑퐁(Ping-Pong) 반대 주문 발송
+                                    self._place_pingpong_order("kis", pos['symbol'], pos['side'], pos['avg_price'], pos['quantity'], mode_key)
                                 else:
                                     logger.info(f"[한투 동기화] 취소 확인됨 (ODNO: {order_id}) -> DB 이동")
                                     self.record_trade(pos['symbol'], pos['quantity'], pos['avg_price'], pos['side'], mode_key, "canceled")
@@ -495,10 +538,14 @@ class TraderLoop:
                             state = res.get('state')
                             
                             if state == 'done':
-                                logger.info(f"[빗썸 동기화] 체결 확인됨 (uuid: {order_id}) -> DB 이동")
+                                logger.info(f"[빗썸 동기화] 체결 확인됨 (uuid: {order_id}) -> DB 이동 및 핑퐁 생성")
                                 self.record_trade(pos['symbol'], pos['quantity'], pos['avg_price'], pos['side'], mode_key, "filled")
                                 self.delete_position(pos['id'], cancel_api=False)
                                 removed_count += 1
+                                
+                                # 핑퐁 반대 주문 발송
+                                self._place_pingpong_order("bithumb", pos['symbol'], pos['side'], pos['avg_price'], pos['quantity'], mode_key)
+                                
                                 # 체결된 경우 unfilled_checked 카운트를 올리지 않음 -> 자연스럽게 다음 호가(추가 1건)를 더 조회하게 됨!
                             elif state == 'cancel':
                                 logger.info(f"[빗썸 동기화] 취소 확인됨 (uuid: {order_id}) -> DB 이동")

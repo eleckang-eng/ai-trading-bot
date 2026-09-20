@@ -1,4 +1,4 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'base_api_service.dart';
 
@@ -56,6 +56,39 @@ class RemoteApiService implements BaseApiService {
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({"exchange": exchange}),
       ).timeout(const Duration(seconds: 15));
+      if (res.statusCode == 200) return jsonDecode(res.body);
+      return {'status': 'error', 'message': 'HTTP ${res.statusCode}'};
+    } catch (e) {
+      return {'status': 'error', 'message': e.toString()};
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> refreshBalance() async {
+    try {
+      final res = await http.post(Uri.parse('${baseUrl}/refresh_balance')).timeout(const Duration(seconds: 15));
+      if (res.statusCode == 200) return jsonDecode(res.body);
+      return {'status': 'error', 'message': 'HTTP ${res.statusCode}'};
+    } catch (e) {
+      return {'status': 'error', 'message': e.toString()};
+    }
+  }
+
+  @override
+  Future<List<dynamic>> getHistory({int limit = 50}) async {
+    try {
+      final res = await http.get(Uri.parse('${baseUrl}/history?limit=$limit')).timeout(const Duration(seconds: 5));
+      if (res.statusCode == 200) return jsonDecode(res.body);
+      return [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> clearHistory() async {
+    try {
+      final res = await http.post(Uri.parse('${baseUrl}/history/clear')).timeout(const Duration(seconds: 5));
       if (res.statusCode == 200) return jsonDecode(res.body);
       return {'status': 'error', 'message': 'HTTP ${res.statusCode}'};
     } catch (e) {

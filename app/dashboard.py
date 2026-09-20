@@ -392,13 +392,13 @@ with tab_order:
                 if grid_direction in ["매도만", "매수/매도 모두"]:
                     for i in range(1, int(sell_count) + 1):
                         s_price = bp + (take_profit * i)
-                        s_price = (s_price // 1000) * 1000 + 900 if is_kis else (s_price // 10) * 10 + 9
+                        s_price = round((s_price - 900) / 1000) * 1000 + 900 if is_kis else round((s_price - 9) / 10) * 10 + 9
                         sell_list.append({"선택": True, "가격": int(s_price), "수량": int(qty)})
                 if grid_direction in ["매수만", "매수/매도 모두"]:
                     for i in range(1, int(buy_count) + 1):
                         b_price = bp - (grid_interval * i)
                         if b_price <= 0: break
-                        b_price = (b_price // 1000) * 1000 + 100 if is_kis else (b_price // 10) * 10 + 1
+                        b_price = round((b_price - 100) / 1000) * 1000 + 100 if is_kis else round((b_price - 1) / 10) * 10 + 1
                         buy_list.append({"선택": True, "가격": int(b_price), "수량": int(qty)})
                 return sell_list, buy_list
 
@@ -429,7 +429,7 @@ with tab_order:
                 if grid_direction in ["매도만", "매수/매도 모두"]:
                     for i in range(1, int(sell_count) + 1):
                         s_price = bp + (take_profit * i)
-                        s_price = (s_price // 1000) * 1000 + 900 if is_kis else (s_price // 10) * 10 + 9
+                        s_price = round((s_price - 900) / 1000) * 1000 + 900 if is_kis else round((s_price - 9) / 10) * 10 + 9
                     
                         if stair_direction in ["매수매도계단", "매도계단"]:
                             stair_level = (i - 1) // int(stair_steps)
@@ -443,7 +443,7 @@ with tab_order:
                     for i in range(1, int(buy_count) + 1):
                         b_price = bp - (grid_interval * i)
                         if b_price <= 0: break
-                        b_price = (b_price // 1000) * 1000 + 100 if is_kis else (b_price // 10) * 10 + 1
+                        b_price = round((b_price - 100) / 1000) * 1000 + 100 if is_kis else round((b_price - 1) / 10) * 10 + 1
                     
                         if stair_direction in ["매수매도계단", "매수계단"]:
                             stair_level = (i - 1) // int(stair_steps)

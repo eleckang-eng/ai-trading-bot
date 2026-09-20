@@ -1,8 +1,9 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import '../services/base_api_service.dart';
 import 'dashboard_view.dart';
 import 'grid_order_view.dart';
 import 'positions_view.dart';
+import 'history_view.dart';
 
 class MainTabScreen extends StatefulWidget {
   final BaseApiService apiService;
@@ -29,6 +30,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
       DashboardView(apiService: widget.apiService),
       GridOrderView(apiService: widget.apiService),
       PositionsView(apiService: widget.apiService),
+      HistoryView(apiService: widget.apiService),
     ];
 
     return Scaffold(
@@ -38,10 +40,12 @@ class _MainTabScreenState extends State<MainTabScreen> {
       ),
       body: screens[_selectedIndex],
       bottomNavigationBar: BottomNavigationBar(
+        type: BottomNavigationBarType.fixed,
         items: const <BottomNavigationBarItem>[
           BottomNavigationBarItem(icon: Icon(Icons.account_balance), label: '상태/잔고'),
           BottomNavigationBarItem(icon: Icon(Icons.rocket_launch), label: '그리드 주문'),
           BottomNavigationBarItem(icon: Icon(Icons.list_alt), label: '거미줄 현황'),
+          BottomNavigationBarItem(icon: Icon(Icons.history), label: '거래 내역'),
         ],
         currentIndex: _selectedIndex,
         selectedItemColor: Colors.amber[800],
