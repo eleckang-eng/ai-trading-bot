@@ -612,21 +612,21 @@ if st.session_state.get("show_grid_preview", False):
             edited_sell = edited_buy = []
 
     
-    # 모바일 환경에서 그리드가 생성되었을 때 사이드바를 자동으로 닫아주는 JS 트릭
-    import streamlit.components.v1 as components
-    components.html('''
-        <script>
-            // 모바일 화면 너비일 때만 작동
-            if(window.parent.innerWidth <= 768) {
-                const closeBtn = window.parent.document.querySelector('[data-testid="stSidebarCollapseButton"]');
-                if(closeBtn) {
-                    closeBtn.click();
+        # 모바일 환경에서 그리드가 생성되었을 때 사이드바를 자동으로 닫아주는 JS 트릭
+        import streamlit.components.v1 as components
+        components.html('''
+            <script>
+                // 모바일 화면 너비일 때만 작동
+                if(window.parent.innerWidth <= 768) {
+                    const closeBtn = window.parent.document.querySelector('[data-testid="stSidebarCollapseButton"]');
+                    if(closeBtn) {
+                        closeBtn.click();
+                    }
                 }
-            }
-        </script>
-    ''', height=0)
+            </script>
+        ''', height=0)
 
-    # 체크박스 선택된 것만 카운트
+        # 체크박스 선택된 것만 카운트
         checked_sell = [r for r in edited_sell if r.get("선택", True) and r.get("가격") and r.get("수량")]
         checked_buy  = [r for r in edited_buy  if r.get("선택", True) and r.get("가격") and r.get("수량")]
         total_checked = len(checked_sell) + len(checked_buy)
