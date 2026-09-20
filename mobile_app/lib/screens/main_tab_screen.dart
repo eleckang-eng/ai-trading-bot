@@ -4,6 +4,7 @@ import 'dashboard_view.dart';
 import 'grid_order_view.dart';
 import 'positions_view.dart';
 import 'history_view.dart';
+import 'settings_view.dart';
 
 class MainTabScreen extends StatefulWidget {
   final BaseApiService apiService;
@@ -31,6 +32,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
       GridOrderView(apiService: widget.apiService),
       PositionsView(apiService: widget.apiService),
       HistoryView(apiService: widget.apiService),
+      SettingsView(apiService: widget.apiService),
     ];
 
     return Scaffold(
@@ -46,6 +48,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
           BottomNavigationBarItem(icon: Icon(Icons.rocket_launch), label: '그리드 주문'),
           BottomNavigationBarItem(icon: Icon(Icons.list_alt), label: '거미줄 현황'),
           BottomNavigationBarItem(icon: Icon(Icons.history), label: '거래 내역'),
+          BottomNavigationBarItem(icon: Icon(Icons.settings), label: '설정'),
         ],
         currentIndex: _selectedIndex,
         selectedItemColor: Colors.amber[800],

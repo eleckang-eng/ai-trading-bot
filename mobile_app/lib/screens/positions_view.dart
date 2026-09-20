@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/base_api_service.dart';
-import '../services/database.dart';
+import 'package:http/http.dart' as http;
 
 class PositionsView extends StatefulWidget {
   final BaseApiService apiService;
@@ -11,9 +11,10 @@ class PositionsView extends StatefulWidget {
 }
 
 class _PositionsViewState extends State<PositionsView> {
-  List<Map<String, dynamic>> sellPositions = [];
-  List<Map<String, dynamic>> buyPositions = [];
+  List<dynamic> sellPositions = [];
+  List<dynamic> buyPositions = [];
   bool isLoading = true;
+  String currentExchange = "kis";
 
   @override
   void initState() {
@@ -23,29 +24,80 @@ class _PositionsViewState extends State<PositionsView> {
 
   Future<void> _loadPositions() async {
     setState(() => isLoading = true);
-    // 모바일 단독 DB에서 가져오기 (종목 기호 005930 임시 고정)
-    final dbHelper = DatabaseHelper.instance;
-    final allPos = await dbHelper.getActivePositions("005930");
+    final data = await widget.apiService.getStatus();
     
     setState(() {
-      sellPositions = allPos.where((p) => p['side'] == 'sell').toList();
-      buyPositions = allPos.where((p) => p['side'] == 'buy').toList();
-      
-      // 가격 순 정렬 (매도는 높은 가격이 위로, 매수는 낮은 가격이 아래로 등 UI에 맞게 정렬)
-      sellPositions.sort((a, b) => (b['price'] as num).compareTo(a['price'] as num));
-      buyPositions.sort((a, b) => (b['price'] as num).compareTo(a['price'] as num));
+      if (data['status'] == 'success') {
+        currentExchange = data['config']?['exchange'] ?? "kis";
+        final bullets = List<dynamic>.from(data['bullets'] ?? []);
+        sellPositions = bullets.where((p) => p['side'] == 'sell').toList();
+        buyPositions = bullets.where((p) => p['side'] == 'buy').toList();
+        
+        sellPositions.sort((a, b) => (b['price'] as num).compareTo(a['price'] as num));
+        buyPositions.sort((a, b) => (b['price'] as num).compareTo(a['price'] as num));
+      } else {
+        sellPositions = [];
+        buyPositions = [];
+      }
       isLoading = false;
     });
   }
 
-  Future<void> _cancelOrder(int id) async {
-    // 실제 환경에서는 API 호출 후 성공 시 DB 삭제
-    await DatabaseHelper.instance.deletePosition(id);
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('주문이 취소되었습니다.')));
-    _loadPositions();
+  Future<void> _cancelOrder(String id) async {
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('주문 취소'),
+        content: const Text('정말 해당 주문을 취소하시겠습니까?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('아니오')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), style: TextButton.styleFrom(foregroundColor: Colors.red), child: const Text('네, 취소합니다')),
+        ],
+      )
+    );
+    if (confirm != true) return;
+
+    try {
+      final res = await http.post(Uri.parse('http://127.0.0.1:8000/order/cancel'), body: {'order_id': id});
+      if (res.statusCode == 200) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('주문이 취소되었습니다.')));
+        _loadPositions();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('주문 취소 실패'), backgroundColor: Colors.red));
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('에러: $e'), backgroundColor: Colors.red));
+    }
   }
 
-  Widget _buildPositionTable(String title, List<Map<String, dynamic>> positions, Color headerColor) {
+  Future<void> _cancelAllPositions() async {
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('⚠️ 전체 포지션 취소'),
+        content: const Text('현재 거래소의 모든 미체결 주문을 일괄 취소하시겠습니까? 이 작업은 되돌릴 수 없습니다.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('닫기')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), style: TextButton.styleFrom(foregroundColor: Colors.red), child: const Text('네, 일괄 취소합니다')),
+        ],
+      )
+    );
+    if (confirm != true) return;
+
+    try {
+      final res = await http.post(Uri.parse('http://127.0.0.1:8000/order/cancel_all'));
+      if (res.statusCode == 200) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ 전체 주문 일괄 취소가 서버로 요청되었습니다.'), backgroundColor: Colors.green));
+        _loadPositions();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('❌ 일괄 취소 실패'), backgroundColor: Colors.red));
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('에러: $e'), backgroundColor: Colors.red));
+    }
+  }
+
+  Widget _buildPositionTable(String title, List<dynamic> positions, Color headerColor) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -55,10 +107,7 @@ class _PositionsViewState extends State<PositionsView> {
           child: Text("$title (${positions.length}건)", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
         ),
         if (positions.isEmpty)
-          const Padding(
-            padding: EdgeInsets.all(16.0),
-            child: Text("포지션 없음", textAlign: TextAlign.center),
-          )
+          const Padding(padding: EdgeInsets.all(16.0), child: Text("포지션 없음", textAlign: TextAlign.center))
         else
           ListView.builder(
             shrinkWrap: true,
@@ -72,7 +121,7 @@ class _PositionsViewState extends State<PositionsView> {
                   subtitle: Text("수량: ${pos['quantity']}주"),
                   trailing: IconButton(
                     icon: const Icon(Icons.cancel, color: Colors.red),
-                    onPressed: () => _cancelOrder(pos['id']),
+                    onPressed: () => _cancelOrder(pos['order_id'].toString()),
                   ),
                 ),
               );
@@ -84,30 +133,53 @@ class _PositionsViewState extends State<PositionsView> {
 
   @override
   Widget build(BuildContext context) {
-    return isLoading
-      ? const Center(child: CircularProgressIndicator())
-      : SingleChildScrollView(
-          padding: const EdgeInsets.all(8.0),
-          child: Column(
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text("호가창 현황 (단독 모드)", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                  IconButton(icon: const Icon(Icons.refresh), onPressed: _loadPositions)
-                ],
-              ),
-              const SizedBox(height: 8),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(child: _buildPositionTable("🔵 매도 포지션", sellPositions, Colors.blue.shade100)),
-                  const SizedBox(width: 8),
-                  Expanded(child: _buildPositionTable("🔴 매수 포지션", buyPositions, Colors.pink.shade100)),
-                ],
-              )
-            ],
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('$currentExchange 호가창 현황'),
+        actions: [
+          IconButton(icon: const Icon(Icons.refresh), onPressed: _loadPositions)
+        ],
+      ),
+      body: isLoading
+        ? const Center(child: CircularProgressIndicator())
+        : SingleChildScrollView(
+            padding: const EdgeInsets.all(8.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                ElevatedButton.icon(
+                  onPressed: _cancelAllPositions,
+                  icon: const Icon(Icons.warning, color: Colors.white),
+                  label: const Text("⚠️ 전체 포지션 취소", style: TextStyle(color: Colors.white)),
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.red, padding: const EdgeInsets.all(16)),
+                ),
+                const SizedBox(height: 16),
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    if (constraints.maxWidth > 600) {
+                      return Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(child: _buildPositionTable("🔵 매도 포지션", sellPositions, Colors.blue.shade100)),
+                          const SizedBox(width: 8),
+                          Expanded(child: _buildPositionTable("🔴 매수 포지션", buyPositions, Colors.pink.shade100)),
+                        ],
+                      );
+                    } else {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _buildPositionTable("🔵 매도 포지션", sellPositions, Colors.blue.shade100),
+                          const SizedBox(height: 16),
+                          _buildPositionTable("🔴 매수 포지션", buyPositions, Colors.pink.shade100),
+                        ],
+                      );
+                    }
+                  }
+                )
+              ],
+            ),
           ),
-        );
+    );
   }
 }
