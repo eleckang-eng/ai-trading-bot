@@ -1,0 +1,17 @@
+{
+  "files.watcherExclude": {
+    "**/.git/objects/**": true,
+    "**/.git/subtree-cache/**": true,
+    "**/node_modules/*/**": true,
+    "**/venv/**": true,
+    "**/mobile_app/build/**": true,
+    "**/mobile_app/.dart_tool/**": true,
+    "**/mobile_app/android/.gradle/**": true
+  },
+  "search.exclude": {
+    "**/venv": true,
+    "**/mobile_app/build": true,
+    "**/mobile_app/.dart_tool": true
+  }
+}
+

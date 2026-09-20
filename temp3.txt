@@ -1,0 +1,20 @@
+540: # ══════════════════════════════════════════════════════
+541: # 메인 대시보드
+542: # ══════════════════════════════════════════════════════
+543: if not status_data:
+544:     st.error("백엔드 서버(FastAPI)에 연결할 수 없습니다.")
+545:     st.info("터미널에서 `python main.py` 를 실행하여 서버를 시작해 주세요.")
+546:     st.stop()
+547: 
+548: # ── 메트릭 카드 ──────────────────────────────────────
+549: c1, c2, c3, c4 = st.columns(4)
+550: is_connected = status_data.get("exchange_connected", False)
+551: 
+552: with c1:
+553:     st.metric("총 자산 (예수금)", f"{status_data.get('balance', 0):,} 원",
+554:               delta="연동 완료" if is_connected else "연동 실패/대기",
+555:               delta_color="normal" if is_connected else "off")
+556:     if st.button("🔄 잔고 동기화", use_container_width=True):
+557:         try: requests.post(f"{API_URL}/refresh_balance", timeout=15); st.rerun()
+558:         except: st.error("동기화 실패")
+559: with c2:

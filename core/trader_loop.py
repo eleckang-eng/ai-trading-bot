@@ -136,7 +136,11 @@ class TraderLoop:
         return self.get_status()
 
     def update_config(self, config_updates):
-        self.config.update(config_updates)
+        for k, v in config_updates.items():
+            if isinstance(v, dict) and k in self.config and isinstance(self.config[k], dict):
+                self.config[k].update(v)
+            else:
+                self.config[k] = v
         return self.config
         
     async def fetch_exchange_data(self):

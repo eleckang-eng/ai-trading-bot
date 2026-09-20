@@ -1,0 +1,72 @@
+<style>
+    /* 윈도우/모바일 공통: 극단적인 여백(Padding/Margin) 축소 */
+    .block-container {
+        padding-top: 1rem !important;
+        padding-bottom: 1rem !important;
+        padding-left: 1rem !important;
+        padding-right: 1rem !important;
+        max-width: 1400px !important;
+    }
+    
+    /* 각 요소들 간의 상하 간격 줄이기 */
+    div[data-testid="stVerticalBlock"] > div {
+        margin-bottom: -0.5rem !important;
+    }
+    
+    /* 탭 메뉴 상하 간격 축소 */
+    button[data-baseweb="tab"] {
+        padding-top: 0.2rem !important;
+        padding-bottom: 0.2rem !important;
+        font-size: 1.1rem !important;
+    }
+    
+    /* 숫자/메트릭 폰트 및 여백 축소 */
+    div[data-testid="metric-container"] {
+        padding-top: 0 !important;
+        padding-bottom: 0 !important;
+    }
+    
+    /* 데이터프레임 높이 튜닝 */
+    div[data-testid="stDataFrame"] {
+        margin-top: -0.5rem !important;
+    }
+
+    /* 데스크톱에서만 사이드바 넓게 유지 */
+    @media (min-width: 768px) {
+        [data-testid="stSidebar"] { min-width: 440px !important; max-width: 480px !important; }
+    }
+    /* 모바일 웹뷰(앱) 최적화: 불필요한 Streamlit 기본 헤더/푸터 및 여백 제거 */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    .block-container {
+        padding-top: 1.5rem !important;
+        padding-bottom: 1.5rem !important;
+        padding-left: 1rem !important;
+        padding-right: 1rem !important;
+    }
+    /* 모바일에서 제목과 Metric(수치) 폰트 크기 대폭 줄이기 (줄바꿈 방지) */
+    @media (max-width: 768px) {
+        h1 { font-size: 1.5rem !important; }
+        h2 { font-size: 1.25rem !important; }
+        h3 { font-size: 1.1rem !important; }
+        
+        [data-testid="stMetricLabel"] p {
+            font-size: 0.9rem !important;
+            white-space: nowrap !important;
+            overflow: hidden !important;
+            text-overflow: ellipsis !important;
+        }
+        [data-testid="stMetricValue"] { font-size: 1.2rem !important; }
+        
+        /* 컬럼 간격 최소화 */
+        [data-testid="column"] {
+            padding: 0 !important;
+            gap: 0 !important;
+        }
+        
+        /* 탭 라벨 폰트 크기 조정 */
+        button[data-baseweb="tab"] p {
+            font-size: 0.9rem !important;
+        }
+    }
+</style>

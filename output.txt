@@ -1,0 +1,132 @@
+380: 
+381: st.divider()
+382: 
+383: # ── 시스템 공통 설정 ──
+384: st.subheader("⚙️ 시스템 공통 설정")
+385: 
+386: # 10. 자동동기화 간격
+387: sync_c1, sync_c2 = st.columns([3, 1])
+388: with sync_c1:
+389: auto_sync_interval = st.number_input("자동동기화 간격 (분)", min_value=1, value=int(cfg.get("auto_sync_interval", 30)), step=1)
+390: with sync_c2:
+391: st.write("")
+392: if st.button("입력", key="btn_sync", use_container_width=True):
+393: st.session_state.confirm_sync_change = auto_sync_interval
+394: st.rerun()
+395: 
+396: if st.session_state.get("confirm_sync_change"):
+397: val = st.session_state.confirm_sync_change
+398: st.warning(f"자동동기화 간격을 **{val}분**으로 변경하시겠습니까?")
+399: conf_c1, conf_c2 = st.columns(2)
+400: with conf_c1:
+401: if st.button("네, 실행합니다", key="yes_sync", use_container_width=True):
+402: try:
+403: requests.post(f"{API_URL}/config", json={"auto_sync_interval": val}, timeout=5)
+404: st.session_state.sync_result_msg = f"자동동기화 간격이 {val}분으로 변경되었습니다."
+405: except Exception as e:
+406: st.session_state.sync_result_msg = f"변경 실패: {e}"
+407: st.session_state.confirm_sync_change = None
+408: st.rerun()
+409: with conf_c2:
+410: if st.button("취소", key="no_sync", use_container_width=True):
+411: st.session_state.confirm_sync_change = None
+412: st.rerun()
+413: 
+414: if st.session_state.get("sync_result_msg"):
+415: st.success(st.session_state.sync_result_msg)
+416: if st.button("확인", key="ok_sync"):
+417: st.session_state.sync_result_msg = None
+418: st.rerun()
+419: 
+420: # 11. 종목 변경
+421: sym_c1, sym_c2 = st.columns([3, 1])
+422: with sym_c1:
+423: symbol_input = st.text_input("종목 변경 (코드/심볼)", value=cfg.get("symbol", "042660" if is_kis else "ONDO"))
+424: with sym_c2:
+425: st.write("")
+426: if st.button("입력", key="btn_sym", use_container_width=True):
+427: st.session_state.confirm_sym_change = symbol_input
+428: st.rerun()
+429: 
+430: if st.session_state.get("confirm_sym_change"):
+431: val = st.session_state.confirm_sym_change
+432: st.warning(f"적용 종목을 **{val}**(으)로 변경하시겠습니까? (기준가와 그리드를 다시 확인하세요)")
+433: conf_s1, conf_s2 = st.columns(2)
+434: with conf_s1:
+435: if st.button("네, 실행합니다", key="yes_sym", use_container_width=True):
+436: try:
+437: resolved_val = val
+438: 
+439: # 1. 한국투자증권 (국내주식) 한글 이름 변환 로직
+440: if current_exchange == "kis" and not val.isdigit():
+441: try:
+442: import FinanceDataReader as fdr
+443: df = fdr.StockListing('KRX')
+444: matched = df[df['Name'] == val]
+445: if not matched.empty:
+446: resolved_val = matched.iloc[0]['Code']
+447: else:
+448: st.session_state.sym_result_msg = f"❌ 종목 변경 실패: '{val}'(을)를 찾을 수 없습니다."
+449: st.session_state.confirm_sym_change = None
+450: st.rerun()
+451: except Exception as e:
+452: st.session_state.sym_result_msg = f"❌ 주식 종목명 검색 실패: {e}"
+453: st.session_state.confirm_sym_change = None
+454: st.rerun()
+455: 
+456: # 2. 빗썸 (코인) 한글 이름 변환 로직
+457: if current_exchange == "bithumb" and any(ord(c) >= 0xAC00 and ord(c) <= 0xD7A3 for c in val):
+458: try:
+459: # 업비트 API를 활용해 한글 코인명 -> 영문 심볼 매핑 (빗썸에 없는 코인일 수 있으나 뒤에서 가격 검증하므로 안전)
+460: upbit_res = requests.get('https://api.upbit.com/v1/market/all')
+461: if upbit_res.status_code == 200:
+462: name_map = {x['korean_name']: x['market'].split('-')[1] for x in upbit_res.json() if x['market'].startswith('KRW')}
+463: # 예외 하드코딩 추가
+464: name_map["온도"] = "ONDO"
+465: name_map["온도코인"] = "ONDO"
+466: if val in name_map:
+467: resolved_val = name_map[val]
+468: except:
+469: pass
+470: 
+471: # 3. 변경된 resolved_val(코드/심볼)로 가격 조회하여 유효성 최종 검증
+472: p_res = requests.get(f"{API_URL}/price?exchange={current_exchange}&symbol={resolved_val}", timeout=5)
+473: fetched_p = 0
+474: if p_res.status_code == 200:
+475: fetched_p = p_res.json().get("price", 0)
+476: 
+477: if fetched_p > 0:
+478: config_payload = {
+479: "symbol": resolved_val,
+480: current_exchange: {"base_price": int(fetched_p)}
+481: }
+482: requests.post(f"{API_URL}/config", json=config_payload, timeout=5)
+483: st.session_state.manual_price = int(fetched_p)
+484: st.session_state.sym_result_msg = f"✅ 종목이 {resolved_val}(으)로 변경되었습니다. (현재가 {int(fetched_p)}원으로 자동 반영)"
+485: else:
+486: st.session_state.sym_result_msg = f"❌ 잘못된 종목이거나 조회할 수 없습니다. (입력:{val} / 해석:{resolved_val})"
+487: 
+488: except Exception as e:
+489: st.session_state.sym_result_msg = f"❌ 변경 중 서버 오류 발생: {e}"
+490: st.session_state.confirm_sym_change = None
+491: st.rerun()
+492: with conf_s2:
+493: if st.button("취소", key="no_sym", use_container_width=True):
+494: st.session_state.confirm_sym_change = None
+495: st.rerun()
+496: 
+497: if st.session_state.get("sym_result_msg"):
+498: st.success(st.session_state.sym_result_msg)
+499: if st.button("확인", key="ok_sym"):
+500: st.session_state.sym_result_msg = None
+501: st.rerun()
+502: 
+503: st.divider()
+504: 
+505: st.divider()
+506: 
+507: # 중복 주문 제거 토글창 추가
+508: remove_dup = st.toggle("중복주문제거", value=True, help="켜져 있을 때는 중복 주문 자동 제거해서 주문해줌. 꺼져 있을 때는 기존과 동일함")
+509: st.session_state.remove_dup = remove_dup
+510: 
+511: # 12. 파라미터 저장 / 초기화 (버튼 2개)

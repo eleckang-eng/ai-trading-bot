@@ -37,6 +37,8 @@ dependencies:
   http: ^1.6.0
   shared_preferences: ^2.5.5
   notification_listener_service: ^1.0.0
+  sqflite: ^2.3.0
+  path: ^1.8.3
 
 dev_dependencies:
   flutter_test:

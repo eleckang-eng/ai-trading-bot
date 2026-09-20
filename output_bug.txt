@@ -1,0 +1,26 @@
+900: if "side" not in df.columns:
+901: df["side"] = "buy"
+902: df["side_kor"] = df["side"].map({"buy": "🔴 매수", "sell": "🔵 매도"}).fillna("🔴 매수")
+903: df["avg_price"] = pd.to_numeric(df["avg_price"], errors="coerce")
+904: df["quantity"]  = pd.to_numeric(df["quantity"],  errors="coerce")
+905: 
+906: sell_df = df[df["side"] == "sell"].sort_values("avg_price", ascending=False).reset_index(drop=True)
+907: buy_df  = df[df["side"] == "buy" ].sort_values("avg_price", ascending=False).reset_index(drop=True)
+908: sell_cnt = len(sell_df)
+909: buy_cnt  = len(buy_df)
+910: 
+911: st.caption(f"🔵 매도 {sell_cnt}건  |  🔴 매수 {buy_cnt}건  |  합계 {sell_cnt + buy_cnt}건")
+912: 
+913: view_mode = st.radio("보기 방식", label_visibility="collapsed",
+914: ["📉 차트 뷰", "📊 호가창 정렬", "📝 주문순 정렬"],
+915: horizontal=True)
+916: 
+917: if view_mode == "📉 차트 뷰":
+918: import plotly.graph_objects as go
+919: 
+920: # 차트뷰에서는 같은 가격대의 수량을 합산하여 깔끔하게 표시
+921: chart_sell_df = sell_df.groupby("avg_price", as_index=False)["quantity"].sum() if not sell_df.empty else sell_df
+922: chart_buy_df  = buy_df.groupby("avg_price", as_index=False)["quantity"].sum() if not buy_df.empty else buy_df
+923: 
+924: fig = go.Figure()
+925: # 실시간 서버 현재가를 우선 사용하고, 없으면 수동 설정 가격 사용

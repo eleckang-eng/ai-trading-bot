@@ -1,0 +1,24 @@
+            grid_interval = st.number_input("매수 간격 (하락폭)", min_value=1, value=int(ex_cfg.get("grid_interval", default_grid)), step=step_val)
+        with col_buy_2:
+            buy_count     = st.number_input("매수주문 개수", min_value=1, max_value=50, value=10, step=1)
+
+        # 5. 주문 방향 (라디오 버튼 3개)
+        grid_direction = st.radio("주문 방향", ["매수/매도 모두", "매수만", "매도만"], index=0, horizontal=True)
+
+        # ── 그리드 생성 헬퍼 ──
+        def _calc_base_price():
+            if base_price > 0: return base_price
+            if cached_price > 0: return cached_price
+            return 80000 if is_kis else 1000
+
+        def _generate_grid(bp, qty):
+            sell_list, buy_list = [], []
+            if grid_direction in ["매도만", "매수/매도 모두"]:
+                for i in range(1, int(sell_count) + 1):
+                    s_price = bp + (take_profit * i)
+                    s_price = (s_price // 1000) * 1000 + 900 if is_kis else round(s_price, 2)
+                    sell_list.append({"선택": True, "방향": "매도", "가격": int(s_price), "수량": int(qty)})
+            if grid_direction in ["매수만", "매수/매도 모두"]:
+                for i in range(1, int(buy_count) + 1):
+                    b_price = bp - (grid_interval * i)
+ 

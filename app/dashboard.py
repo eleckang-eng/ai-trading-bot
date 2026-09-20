@@ -18,21 +18,43 @@ import time
 # 페이지 설정
 st.set_page_config(page_title="AI 핑퐁 봇", page_icon="📈", layout="wide", initial_sidebar_state="auto")
 
+# 모바일 환경에서 화면 핀치 줌(확대/축소)을 허용하는 JS 주입
+import streamlit.components.v1 as components
+components.html('''
+<script>
+    const meta = window.parent.document.querySelector('meta[name="viewport"]');
+    if (meta) {
+        meta.setAttribute("content", "width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes");
+    }
+</script>
+''', height=0)
+
 API_URL = "http://127.0.0.1:8000"
 
 st.markdown("""
 
 <style>
 
-        /* 모바일 컬럼 무적 방어: 절대 두 줄로 안 풀림 */
+        /* 
+         * [CRITICAL] 모바일 반응형 레이아웃 잘림 방지 (2열 강제 유지)
+         * 
+         * 1. flex-wrap: nowrap 
+         *    - 모바일에서 좁은 폭으로 인해 2열이 1열로 강제 줄바꿈(Stack)되는 것을 막고, 항상 2열(또는 4열)을 유지합니다.
+         * 2. justify-content: center 제거 (중요)
+         *    - 과거에는 center 정렬이 있었으나, 내부 내용물이 화면 폭보다 클 경우 
+         *      가운데 정렬로 인해 뷰포트 왼쪽(음수 좌표)으로 밀려나버려 스크롤조차 불가능하게 좌측 화면이 잘리는 치명적 버그가 있었습니다.
+         * 3. flex: 1 1 auto 및 min-width: 0 (가장 중요)
+         *    - 기존에는 0%를 써서 무조건 1:1:1 로 나누었더니 상단 제목(모드)처럼 긴 글씨가 들어가는 곳이 너무 좁아져 두 줄로 꺾이는 문제가 생겼습니다.
+         *    - 이를 auto로 변경하면 내용물 길이에 비례해서 공간을 영리하게 나누어 가지되, min-width: 0 덕분에 화면 밖으로 절대 튀어나가지는 않습니다.
+         */
         div[data-testid="stHorizontalBlock"] {
             flex-direction: row !important;
-            flex-wrap: nowrap !important; /* 아래로 넘어가지 않음 */
-            gap: 0.5rem !important; /* 간격 확보 */
-            justify-content: center !important;
+            flex-wrap: nowrap !important;
+            gap: 0.5rem !important;
         }
         div[data-testid="stHorizontalBlock"] > div {
-            flex: 1 1 auto !important;
+            flex: 1 1 auto !important; 
+            min-width: 0 !important; 
             padding: 0 0.2rem !important;
             display: block !important;
         }
@@ -95,8 +117,10 @@ st.markdown("""
         }
         [data-testid="stMetricValue"] { font-size: 1.2rem !important; }
         
-        /* 컬럼 간격 최소화 */
+        /* 폰에서 100% 팽창 억제 및 강제 반반 분배 */
         [data-testid="column"] {
+            min-width: 0 !important;
+            flex: 1 1 0% !important;
             padding: 0 !important;
             gap: 0 !important;
         }
@@ -138,12 +162,12 @@ if curr_ex == "kis" and curr_mock and not curr_paper:
     if not status_data.get("positions"):
         dummy_pos = []
         bp = 83500
-        # 매도 10건 (현재가 위)
-        for i in range(1, 11):
+        # 매도 20건 (현재가 위)
+        for i in range(1, 21):
             if (100+i) not in st.session_state.get("dummy_cancelled_ids", []):
                 dummy_pos.append({"id": 100+i, "side": "sell", "avg_price": bp + (i * 2000), "quantity": 10 + (i*2), "symbol": "042660"})
-        # 매수 10건 (현재가 아래)
-        for i in range(1, 11):
+        # 매수 20건 (현재가 아래)
+        for i in range(1, 21):
             if (200+i) not in st.session_state.get("dummy_cancelled_ids", []):
                 dummy_pos.append({"id": 200+i, "side": "buy", "avg_price": bp - (i * 2000), "quantity": 10 + (i*2), "symbol": "042660"})
         status_data["positions"] = dummy_pos
@@ -190,7 +214,7 @@ with c_sync:
 # ══════════════════════════════════════════════════════
 # 사이드바
 # ══════════════════════════════════════════════════════
-tab_dash, tab_order, tab_history, tab_settings = st.tabs(["📊 현황 대시보드", "🛒 주문 생성", "💸 거래 내역", "⚙️ 시스템 설정"])
+tab_dash, tab_order, tab_history, tab_settings = st.tabs(["📊 현황", "🛒 주문 생성", "💸 거래 내역", "⚙️ 설정"])
 
 with tab_settings:
     st.header("⚙️ 시스템 제어")
@@ -436,8 +460,15 @@ with tab_order:
                         try:
                             requests.post(f"{API_URL}/config", json={
                                 current_exchange: {
-                                    "base_price": base_price, "grid_interval": grid_interval,
-                                    "take_profit": take_profit, "order_quantity": order_quantity
+                                    "grid_interval": grid_interval,
+                                    "take_profit": take_profit, 
+                                    "order_quantity": order_quantity,
+                                    "sell_count": sell_count,
+                                    "buy_count": buy_count,
+                                    "grid_direction": grid_direction,
+                                    "stair_steps": stair_steps,
+                                    "stair_add_qty": stair_add_qty,
+                                    "stair_direction": stair_direction
                                 }
                             }, timeout=5)
                             st.session_state.param_result_msg = "그리드 파라미터 기본값으로 저장 완료"
@@ -461,8 +492,16 @@ with tab_order:
                             def_qty  = 10   if is_kis else 1000
                             requests.post(f"{API_URL}/config", json={
                                 current_exchange: {
-                                    "base_price": 0, "grid_interval": def_grid,
-                                    "take_profit": def_prof, "order_quantity": def_qty
+                                    "base_price": 0, 
+                                    "grid_interval": def_grid,
+                                    "take_profit": def_prof, 
+                                    "order_quantity": def_qty,
+                                    "sell_count": 10,
+                                    "buy_count": 10,
+                                    "grid_direction": "매수/매도 모두",
+                                    "stair_steps": 3,
+                                    "stair_add_qty": 5 if is_kis else 500,
+                                    "stair_direction": "매수매도계단"
                                 }
                             }, timeout=5)
                             st.session_state.param_result_msg = "그리드 파라미터 완전 초기화 완료"
@@ -486,11 +525,10 @@ with tab_settings:
     st.subheader("⚙️ 시스템 공통 설정")
     
     # 10. 자동동기화 간격
-    sync_c1, sync_c2 = st.columns([3, 1])
+    sync_c1, sync_c2 = st.columns([3, 1], vertical_alignment="bottom")
     with sync_c1:
         auto_sync_interval = st.number_input("자동동기화 간격 (분)", min_value=1, value=int(cfg.get("auto_sync_interval", 1)), step=1)
     with sync_c2:
-        st.write("")
         if st.button("입력", key="btn_sync", use_container_width=True):
             st.session_state.confirm_sync_change = auto_sync_interval
             st.rerun()
@@ -520,11 +558,10 @@ with tab_settings:
             st.rerun()
 
     # 11. 종목 변경
-    sym_c1, sym_c2 = st.columns([3, 1])
+    sym_c1, sym_c2 = st.columns([3, 1], vertical_alignment="bottom")
     with sym_c1:
         symbol_input = st.text_input("종목 변경 (코드/심볼)", value=cfg.get("symbol", "042660" if is_kis else "ONDO"))
     with sym_c2:
-        st.write("")
         if st.button("입력", key="btn_sym", use_container_width=True):
             st.session_state.confirm_sym_change = symbol_input
             st.rerun()
@@ -616,7 +653,6 @@ with tab_settings:
     st.write("")
     
     st.subheader("🤖 시스템 상태")
-    st.subheader("엔진 구동 상태")
     col_a, col_b = st.columns(2)
     ex_cfg_disp = status_data.get("config", {}).get(status_data.get("config", {}).get("exchange", "bithumb"), {}) if status_data else {}
     curr_ex_disp = status_data.get("config", {}).get("exchange", "bithumb") if status_data else "bithumb"
@@ -956,7 +992,7 @@ with tab_order:
     # ── 수동 주문 제어 ────────────────────────────────────
     col_t1, col_t2 = st.columns([3, 1])
     with col_t1:
-        st.subheader("🕹️ 수동 주문 제어 (지정가 전용)")
+        st.subheader("🕹️ 수동 주문 (지정가)")
     with col_t2:
         if st.button("🔎 현재가 조회", use_container_width=True):
             try:
@@ -1219,23 +1255,26 @@ with tab_dash:
             sel_s = []
             sel_b = []
             
+            # 취소 시 표를 완전히 새로 그리기 위한 강제 리프레시 카운터
+            grid_refresh_cnt = st.session_state.get("grid_refresh_cnt", 0)
+            
             with col_s:
-                st.markdown("**🔵 매도 포지션**")
+                st.markdown(f"**🔵 매도 포지션 ({len(s_df)}건)**")
                 if not s_df.empty:
                     s_disp = s_df[["id", "avg_price", "quantity"]].copy()
                     s_disp.columns = ["id", "진입 가격", "수량"]
                     s_disp.insert(0, "순번", range(1, len(s_disp) + 1))
-                    sel_s = _render_dash_grid(s_disp, f"dash_sell_{view_mode}", "#E0F2FE")
+                    sel_s = _render_dash_grid(s_disp, f"dash_sell_{view_mode}_{grid_refresh_cnt}", "#E0F2FE")
                 else:
                     st.info("매도 포지션 없음")
                     
             with col_b:
-                st.markdown("**🔴 매수 포지션**")
+                st.markdown(f"**🔴 매수 포지션 ({len(b_df)}건)**")
                 if not b_df.empty:
                     b_disp = b_df[["id", "avg_price", "quantity"]].copy()
                     b_disp.columns = ["id", "진입 가격", "수량"]
                     b_disp.insert(0, "순번", range(1, len(b_disp) + 1))
-                    sel_b = _render_dash_grid(b_disp, f"dash_buy_{view_mode}", "#FCE4EC")
+                    sel_b = _render_dash_grid(b_disp, f"dash_buy_{view_mode}_{grid_refresh_cnt}", "#FCE4EC")
                 else:
                     st.info("매수 포지션 없음")
                     
@@ -1262,6 +1301,10 @@ with tab_dash:
                         if "dummy_cancelled_ids" not in st.session_state:
                             st.session_state.dummy_cancelled_ids = []
                         st.session_state.dummy_cancelled_ids.extend(ids_to_cancel)
+                        
+                        # 체크박스 선택 잔상 초기화 (위젯 키 변경으로 완전 새 위젯으로 인식시킴)
+                        st.session_state.grid_refresh_cnt = st.session_state.get("grid_refresh_cnt", 0) + 1
+
                         st.rerun()
                     else:
                         st.error(f"❌ {len(ids_to_cancel)}건 주문 취소 처리 실패 (사유: HTTP {res.status_code} - {res.text})")
@@ -1283,18 +1326,16 @@ with tab_dash:
     st.write("") # 차트와 간격 띄우기
     
     st.subheader("💰 내 자산 및 수익 현황")
-    c1, c2, c3, c4 = st.columns(4)
+    c1, c2 = st.columns(2)
     is_connected = status_data.get("exchange_connected", False)
 
     with c1:
         st.metric("총 자산 (예수금)", f"{status_data.get('balance', 0):,} 원",
                   delta="연동 완료" if is_connected else "연동 실패/대기",
                   delta_color="normal" if is_connected else "off")
+        st.metric("금일 체결 횟수", f"{status_data.get('trade_count', 0)} 회")
     with c2:
         st.metric("누적 실현 수익", f"{status_data.get('total_profit', 0):,} 원", delta="0.00%")
-    with c3:
-        st.metric("금일 체결 횟수", f"{status_data.get('trade_count', 0)} 회")
-    with c4:
         st.metric("활성 거래중 노드", f"{len(status_data.get('positions', []))} 개")
 
 # ── 신규 거래 내역 탭 ────────────────────────────────
