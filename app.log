@@ -36,3 +36,7 @@
 2026-09-21 00:12:16,483 - watchfiles.main - INFO - 5 changes detected
 2026-09-21 00:15:22,095 - watchfiles.main - INFO - 1 change detected
 2026-09-21 00:15:22,340 - TraderLoop - INFO - TraderLoop stop requested.
+2026-09-21 00:15:56,594 - TraderLoop - INFO - TraderLoop start requested.
+2026-09-21 00:15:56,596 - TraderLoop - INFO - Trader Loop is now running...
+2026-09-21 00:15:56,596 - TraderLoop - INFO - 🔄 [자동 동기화] 잔고 및 거래소 미체결 내역 동기화 실행
+2026-09-21 00:15:56,678 - watchfiles.main - INFO - 5 changes detected
