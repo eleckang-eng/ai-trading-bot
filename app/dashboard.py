@@ -1242,16 +1242,23 @@ with tab_dash:
             selected_pos = (sel_s or []) + (sel_b or [])
             
         # 선택된 항목이 있을 때만 취소 버튼 표시
+        # ── 3) 취소 버튼 및 API 호출 로직 ────────────────────────
+        # 선택된 항목이 있을 때만 취소 버튼 표시
         if selected_pos:
             st.write("")
+            # 버튼 클릭 시 폼 제출처럼 화면이 리로드(rerun)되므로, 상태(session_state)에 메시지를 저장해야 합니다.
             if st.button(f"🗑️ 선택한 {len(selected_pos)}건 주문 취소", use_container_width=True, type="primary"):
                 ids_to_cancel = [int(p["id"]) for p in selected_pos if "id" in p]
                 try:
+                    # 백엔드 서버로 실제 증권사 취소 명령 전송 (5초 타임아웃으로 블로킹 방지)
                     res = requests.post(f"{API_URL}/order/cancel_list", json={"ids": ids_to_cancel}, timeout=5)
+                    
                     if res.status_code == 200:
+                        # 성공 메시지를 즉시 띄우면 rerun에 의해 증발하므로 session_state에 보관
                         st.session_state.dash_cancel_msg = f"✅ {len(ids_to_cancel)}건 주문 취소 처리 성공"
                         
-                        # 더미 데이터 UI 테스트를 위해 취소된 ID 기록
+                        # [UI 더미 테스트 전용] 백엔드 DB가 비어있어서 계속 똑같은 더미 데이터가 주입되는 현상을 막기 위해
+                        # 방금 취소한 가짜 ID들을 기억해두고 렌더링 시 제외시킵니다.
                         if "dummy_cancelled_ids" not in st.session_state:
                             st.session_state.dummy_cancelled_ids = []
                         st.session_state.dummy_cancelled_ids.extend(ids_to_cancel)
@@ -1259,8 +1266,10 @@ with tab_dash:
                     else:
                         st.error(f"❌ {len(ids_to_cancel)}건 주문 취소 처리 실패 (사유: HTTP {res.status_code} - {res.text})")
                 except Exception as e:
+                    # 증권사 API 오류가 아닌 백엔드 서버 자체가 죽었거나 인터넷이 끊긴 경우
                     st.error(f"❌ {len(ids_to_cancel)}건 주문 취소 처리 실패 (사유: 서버 응답 없음 또는 네트워크 에러 - {e})")
                     
+        # 이전 rerun() 에서 저장된 성공 메시지가 있다면 화면에 띄우고 확인 대기
         if st.session_state.get("dash_cancel_msg"):
             st.success(st.session_state.dash_cancel_msg)
             if st.button("확인", key="ok_dash_cancel"):

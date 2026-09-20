@@ -14,7 +14,11 @@ class KISClient(BaseExchange):
         self._auth()
 
     def _auth(self):
-        """Access Token 발급 및 캐싱"""
+        """
+        Access Token 발급 및 캐싱
+        단독 모바일 구동 시 서버가 며칠씩 켜져 있을 때 24시간 이후 토큰이 만료되어 401 오류가 발생하는 것을 방지하기 위해,
+        안전하게 23시간(82800초) 경과 시 토큰을 자동 재발급받도록 만료 시간(token_expiry)을 함께 관리합니다.
+        """
         import os, time
         # URL에 vts가 포함되면 모의투자용 토큰 파일 사용
         prefix = "mock_" if "vts" in self.url_base else "real_"
@@ -40,6 +44,7 @@ class KISClient(BaseExchange):
         res = requests.post(url, headers=headers, data=json.dumps(body), timeout=5)
         if res.status_code == 200:
             self.access_token = res.json().get("access_token")
+            # 24시간 토큰이므로 23시간(82800초) 뒤를 만료 시점으로 기록하여 사전 갱신 유도
             self.token_expiry = time.time() + 82800
             # 발급받은 토큰을 파일에 저장
             with open(token_file, "w") as f:
@@ -48,6 +53,11 @@ class KISClient(BaseExchange):
             raise Exception(f"KIS Auth Failed: {res.text}")
 
     def _get_headers(self, tr_id: str):
+        """
+        API 요청 시 공통으로 사용되는 헤더를 반환합니다.
+        요청 직전에 현재 시간과 token_expiry를 비교하여, 만료 시점이 지났으면 즉각 _auth()를 재호출합니다.
+        이를 통해 며칠 동안 봇을 켜두어도 토큰 만료 에러 없이 무중단으로 동작할 수 있습니다.
+        """
         import time
         if not self.access_token or time.time() >= self.token_expiry:
             self._auth()
@@ -86,15 +96,20 @@ class KISClient(BaseExchange):
         return res.json()
 
     def get_current_price(self, symbol: str):
+        """현재가 조회. FHKST01010100 TR_ID는 실전/모의투자에 공통으로 사용됩니다."""
         path = "/uapi/domestic-stock/v1/quotations/inquire-price"
         url = f"{self.url_base}{path}"
-        # 가격 조회 TR_ID는 실전/모의 공통
         headers = self._get_headers("FHKST01010100")
         params = {"FID_COND_MRKT_DIV_CODE": "J", "FID_INPUT_ISCD": symbol}
         res = requests.get(url, headers=headers, params=params)
         return res.json()
 
     def _place_order(self, symbol: str, price: int, quantity: int, is_buy: bool):
+        """
+        주문 접수 로직.
+        초당 요청 횟수 제한(Rate Limit) 등 일시적인 API 서버 거부나 오류 발생 시,
+        즉시 실패 처리하지 않고 점진적으로 대기 시간(Incremental Backoff)을 늘려가며 재시도하여 안정성을 극대화합니다.
+        """
         import time
         path = "/uapi/domestic-stock/v1/trading/order-cash"
         url = f"{self.url_base}{path}"
@@ -119,7 +134,8 @@ class KISClient(BaseExchange):
             msg1 = data.get("msg1", "")
             msg_cd = data.get("msg_cd", "")
             
-            # KIS Rate Limit 점진적 대기(Exponential/Incremental Backoff)
+            # KIS Rate Limit에 도달했을 때 점진적 대기(Exponential/Incremental Backoff)를 수행합니다.
+            # 서버 과부하를 막고, 일정 시간 뒤 정상적으로 요청이 수락되도록 유도합니다.
             if rt_cd != "0" and ("초과" in msg1 or "건수" in msg1 or "EGW00" in msg_cd):
                 wait_time = base_wait + (attempt * 0.8) # 1.0, 1.8, 2.6, 3.4, 4.2초...
                 print(f"[Rate Limit] KIS API 제한 도달 ({msg1}). {wait_time:.1f}초 대기 후 재시도... ({attempt+1}/{max_retries})")
