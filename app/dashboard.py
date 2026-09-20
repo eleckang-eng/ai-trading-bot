@@ -4,13 +4,30 @@ import pandas as pd
 import time
 
 # 페이지 설정
-st.set_page_config(page_title="AI 핑퐁 봇", page_icon="📈", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="AI 핑퐁 봇", page_icon="📈", layout="wide", initial_sidebar_state="auto")
 
 API_URL = "http://127.0.0.1:8000"
 
 st.markdown("""
 <style>
-    [data-testid="stSidebar"] { min-width: 440px !important; max-width: 480px !important; }
+    /* 데스크톱에서만 사이드바 넓게 유지 */
+    @media (min-width: 768px) {
+        [data-testid="stSidebar"] { min-width: 440px !important; max-width: 480px !important; }
+    }
+    /* 모바일 웹뷰(앱) 최적화: 불필요한 Streamlit 기본 헤더/푸터 및 여백 제거 */
+    #MainMenu {visibility: hidden;}
+    header {visibility: hidden;}
+    footer {visibility: hidden;}
+    .block-container {
+        padding-top: 1.5rem !important;
+        padding-bottom: 1.5rem !important;
+        padding-left: 1rem !important;
+        padding-right: 1rem !important;
+    }
+    /* 모바일에서 Metric(수치) 폰트 크기 살짝 줄이기 */
+    [data-testid="stMetricValue"] {
+        font-size: 1.5rem !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
