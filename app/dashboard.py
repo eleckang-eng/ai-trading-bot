@@ -431,6 +431,12 @@ with st.sidebar:
 
     st.divider()
 
+    st.divider()
+
+    # 중복 주문 제거 토글창 추가
+    remove_dup = st.toggle("중복주문제거", value=True, help="켜져 있을 때는 중복 주문 자동 제거해서 주문해줌. 꺼져 있을 때는 기존과 동일함")
+    st.session_state.remove_dup = remove_dup
+
     # 12. 파라미터 저장 / 초기화 (버튼 2개)
     btn_p1, btn_p2 = st.columns(2)
     with btn_p1:
@@ -585,6 +591,9 @@ if st.session_state.get("show_grid_preview", False):
 
                 # 중복 가격 검사
                 existing_prices = {float(p.get("avg_price", p.get("price", 0))) for p in status_data.get("positions", [])}
+                if st.session_state.get("remove_dup", True):
+                    checked_sell = [r for r in checked_sell if float(r.get("가격", 0)) not in existing_prices]
+                    checked_buy = [r for r in checked_buy if float(r.get("가격", 0)) not in existing_prices]
                 overlap = sorted({float(r["가격"]) for r in checked_sell + checked_buy if float(r.get("가격", 0)) in existing_prices})
                 if overlap:
                     st.error(f"⚠️ 이미 거래중인 포지션과 가격이 겹칩니다: {', '.join(f'{int(p):,}원' for p in overlap)}")
