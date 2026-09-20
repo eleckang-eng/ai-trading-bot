@@ -598,20 +598,35 @@ if st.session_state.get("show_grid_preview", False):
             g_c1, g_c2 = st.columns(2)
             with g_c1:
                 st.markdown("**🔵 매도 리스트**")
-                edited_sell = st.data_editor(s_list, num_rows="dynamic", key="sell_editor", use_container_width=True)
+                edited_sell = st.data_editor(s_list, num_rows="dynamic", key="sell_editor", use_container_width=True, height=250)
             with g_c2:
                 st.markdown("**🔴 매수 리스트**")
-                edited_buy  = st.data_editor(b_list, num_rows="dynamic", key="buy_editor",  use_container_width=True)
+                edited_buy  = st.data_editor(b_list, num_rows="dynamic", key="buy_editor",  use_container_width=True, height=250)
         elif has_sell:
-            edited_sell = st.data_editor(s_list, num_rows="dynamic", key="sell_editor_only", use_container_width=True)
+            edited_sell = st.data_editor(s_list, num_rows="dynamic", key="sell_editor_only", use_container_width=True, height=250)
             edited_buy  = []
         elif has_buy:
-            edited_buy  = st.data_editor(b_list, num_rows="dynamic", key="buy_editor_only",  use_container_width=True)
+            edited_buy  = st.data_editor(b_list, num_rows="dynamic", key="buy_editor_only",  use_container_width=True, height=250)
             edited_sell = []
         else:
             edited_sell = edited_buy = []
 
-        # 체크박스 선택된 것만 카운트
+    
+    # 모바일 환경에서 그리드가 생성되었을 때 사이드바를 자동으로 닫아주는 JS 트릭
+    import streamlit.components.v1 as components
+    components.html('''
+        <script>
+            // 모바일 화면 너비일 때만 작동
+            if(window.parent.innerWidth <= 768) {
+                const closeBtn = window.parent.document.querySelector('[data-testid="stSidebarCollapseButton"]');
+                if(closeBtn) {
+                    closeBtn.click();
+                }
+            }
+        </script>
+    ''', height=0)
+
+    # 체크박스 선택된 것만 카운트
         checked_sell = [r for r in edited_sell if r.get("선택", True) and r.get("가격") and r.get("수량")]
         checked_buy  = [r for r in edited_buy  if r.get("선택", True) and r.get("가격") and r.get("수량")]
         total_checked = len(checked_sell) + len(checked_buy)
