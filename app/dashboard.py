@@ -23,9 +23,30 @@ st.markdown("""
         padding-left: 1rem !important;
         padding-right: 1rem !important;
     }
-    /* 모바일에서 Metric(수치) 폰트 크기 살짝 줄이기 */
-    [data-testid="stMetricValue"] {
-        font-size: 1.5rem !important;
+    /* 모바일에서 제목과 Metric(수치) 폰트 크기 대폭 줄이기 (줄바꿈 방지) */
+    @media (max-width: 768px) {
+        h1 { font-size: 1.5rem !important; }
+        h2 { font-size: 1.25rem !important; }
+        h3 { font-size: 1.1rem !important; }
+        
+        [data-testid="stMetricLabel"] p {
+            font-size: 0.9rem !important;
+            white-space: nowrap !important;
+            overflow: hidden !important;
+            text-overflow: ellipsis !important;
+        }
+        [data-testid="stMetricValue"] { font-size: 1.2rem !important; }
+        
+        /* 컬럼 간격 최소화 */
+        [data-testid="column"] {
+            padding: 0 !important;
+            gap: 0 !important;
+        }
+        
+        /* 탭 라벨 폰트 크기 조정 */
+        button[data-baseweb="tab"] p {
+            font-size: 0.9rem !important;
+        }
     }
 </style>
 """, unsafe_allow_html=True)
