@@ -182,6 +182,53 @@ class TraderLoop:
             conn.commit()
         return {"status": "success", "message": f"{mode_key} 거래 내역이 초기화되었습니다."}
 
+    def _calculate_profit_and_count(self):
+        mode_key = self._get_mode_key()
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT filled_at, side, price, quantity 
+                FROM trade_history 
+                WHERE exchange_mode = ? AND status = 'filled'
+                ORDER BY id ASC
+            ''', (mode_key,))
+            rows = cursor.fetchall()
+            
+        import datetime
+        today_str = datetime.datetime.now().strftime("%Y-%m-%d")
+        
+        unmatched_buys = []
+        total_profit = 0.0
+        today_trade_count = 0
+        
+        for row in rows:
+            filled_at_str, side, price, qty = row
+            
+            if filled_at_str.startswith(today_str):
+                today_trade_count += 1
+                
+            if side == 'buy':
+                unmatched_buys.append({"price": float(price), "qty": float(qty)})
+            elif side == 'sell':
+                sell_qty = float(qty)
+                sell_price = float(price)
+                
+                while sell_qty > 0 and unmatched_buys:
+                    oldest_buy = unmatched_buys[0]
+                    match_qty = min(sell_qty, oldest_buy["qty"])
+                    
+                    # 실현 수익 산출 (매도단가 - 매수단가) * 수량
+                    profit = (sell_price - oldest_buy["price"]) * match_qty
+                    total_profit += profit
+                    
+                    sell_qty -= match_qty
+                    oldest_buy["qty"] -= match_qty
+                    
+                    if oldest_buy["qty"] <= 0:
+                        unmatched_buys.pop(0)
+
+        return total_profit, today_trade_count
+
     def get_positions(self):
         mode_key = self._get_mode_key()
         with sqlite3.connect(self.db_path) as conn:
@@ -307,13 +354,17 @@ class TraderLoop:
         elif current_exchange == "bithumb":
             is_connected = self.bithumb is not None
         bal = self.balances.get(current_exchange, 0)
+        
+        profit, trade_count = self._calculate_profit_and_count()
 
         return {
             "running": self.running,
             "config": self.config,
             "balance": bal,
             "positions": self.get_positions(),
-            "exchange_connected": is_connected
+            "exchange_connected": is_connected,
+            "total_profit": int(profit),
+            "trade_count": trade_count
         }
 
     def start(self):

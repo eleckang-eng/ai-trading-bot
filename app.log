@@ -55,3 +55,21 @@
 2026-09-21 00:54:05,582 - watchfiles.main - INFO - 3 changes detected
 2026-09-21 00:54:05,603 - TraderLoop - INFO - [bithumb_real] 포지션 및 미체결 주문 일괄 취소 (DB 초기화)
 2026-09-21 00:54:05,943 - watchfiles.main - INFO - 3 changes detected
+2026-09-21 00:55:35,115 - TraderLoop - INFO - TraderLoop start requested.
+2026-09-21 00:55:35,202 - watchfiles.main - INFO - 5 changes detected
+2026-09-21 00:55:35,676 - TraderLoop - INFO - Trader Loop is now running...
+2026-09-21 00:55:35,677 - TraderLoop - INFO - 🔄 [자동 동기화] 잔고 및 거래소 미체결 내역 동기화 실행
+2026-09-21 00:58:29,666 - TraderLoop - INFO - TraderLoop start requested.
+2026-09-21 00:58:30,190 - TraderLoop - INFO - Trader Loop is now running...
+2026-09-21 00:58:30,190 - TraderLoop - INFO - 🔄 [자동 동기화] 잔고 및 거래소 미체결 내역 동기화 실행
+2026-09-21 00:58:36,936 - TraderLoop - INFO - [실전투자] 수동 매수 API 접수: 10.0개 @ 10,000원 지정가 / 응답: {'error': {'name': 'over_price_limit_bid', 'message': '주문가격은 최대 2272.00 이하로 주문 가능합니다.'}}
+2026-09-21 00:58:37,443 - TraderLoop - INFO - [실전투자] 수동 매도 API 접수: 10.0개 @ 20,000원 지정가 / 응답: {'error': {'name': 'over_price_limit_ask', 'message': '주문가격은 최대 2272.00 이하로 주문 가능합니다.'}}
+2026-09-21 00:58:37,454 - TraderLoop - INFO - [bithumb_real] 포지션 및 미체결 주문 일괄 취소 (DB 초기화)
+2026-09-21 00:59:03,979 - TraderLoop - INFO - TraderLoop start requested.
+2026-09-21 00:59:04,459 - TraderLoop - INFO - Trader Loop is now running...
+2026-09-21 00:59:04,460 - TraderLoop - INFO - 🔄 [자동 동기화] 잔고 및 거래소 미체결 내역 동기화 실행
+2026-09-21 00:59:13,343 - TraderLoop - INFO - [실전투자] 수동 매수 API 접수: 10.0개 @ 10,000원 지정가 / 응답: {'error': {'name': 'over_price_limit_bid', 'message': '주문가격은 최대 2276.00 이하로 주문 가능합니다.'}}
+2026-09-21 00:59:13,793 - TraderLoop - INFO - [실전투자] 수동 매도 API 접수: 10.0개 @ 20,000원 지정가 / 응답: {'error': {'name': 'over_price_limit_ask', 'message': '주문가격은 최대 2276.00 이하로 주문 가능합니다.'}}
+2026-09-21 00:59:13,805 - TraderLoop - INFO - [bithumb_real] 포지션 및 미체결 주문 일괄 취소 (DB 초기화)
+2026-09-21 00:59:24,208 - watchfiles.main - INFO - 3 changes detected
+2026-09-21 00:59:55,307 - watchfiles.main - INFO - 3 changes detected
