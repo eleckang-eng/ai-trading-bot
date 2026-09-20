@@ -147,10 +147,30 @@ with st.sidebar:
             except: pass
 
     if st.button("🔄 봇 서버 재시작", use_container_width=True):
+        msg_placeholder = st.empty()
         try:
             requests.post(f"{API_URL}/system/restart", timeout=3)
-            st.info("재시작 명령 전송. 약 3초 후 서버가 살아납니다.")
-        except: pass
+            msg_placeholder.info("재시작 명령 전송. 서버 응답을 대기 중입니다... (최대 10초)")
+            
+            success = False
+            for _ in range(10):
+                time.sleep(1.0)
+                try:
+                    res = requests.get(f"{API_URL}/status", timeout=1)
+                    if res.status_code == 200:
+                        success = True
+                        break
+                except:
+                    pass
+            
+            if success:
+                msg_placeholder.success("✅ 서버 재시작 완료!")
+                time.sleep(1)
+                st.rerun()
+            else:
+                msg_placeholder.error("❌ 서버 재시작 실패 또는 응답 시간 초과")
+        except Exception as e:
+            msg_placeholder.error("❌ 명령 전송 실패")
 
     st.divider()
 
