@@ -163,6 +163,18 @@ def cancel_all_orders():
     """미체결 주문 일괄 취소"""
     return trader.cancel_all_orders()
 
+class CancelListModel(BaseModel):
+    ids: list[int]
+
+@app.post("/order/cancel_list")
+def cancel_list_orders(payload: CancelListModel):
+    """선택한 주문(포지션)들의 ID를 받아 개별 취소(삭제)"""
+    success_count = 0
+    for pid in payload.ids:
+        trader.delete_position(pid)
+        success_count += 1
+    return {"status": "success", "message": f"{success_count}건의 주문이 성공적으로 취소되었습니다."}
+
 @app.post("/order/sync")
 def sync_orders():
     """거래소 서버와 미체결 주문 동기화"""

@@ -10,6 +10,7 @@ class KISClient(BaseExchange):
         self.cano = cano
         self.acnt_prdt_cd = acnt_prdt_cd
         self.access_token = None
+        self.token_expiry = 0
         self._auth()
 
     def _auth(self):
@@ -21,9 +22,11 @@ class KISClient(BaseExchange):
         
         # 1. 파일에 유효한 토큰이 있으면 재사용 (유효기간 24시간, 넉넉히 23시간으로 계산)
         if os.path.exists(token_file):
-            if time.time() - os.path.getmtime(token_file) < 82800:
+            file_mtime = os.path.getmtime(token_file)
+            if time.time() - file_mtime < 82800:
                 with open(token_file, "r") as f:
                     self.access_token = f.read().strip()
+                    self.token_expiry = file_mtime + 82800
                     return
 
         # 2. 토큰이 없거나 만료되었으면 새로 발급
@@ -37,6 +40,7 @@ class KISClient(BaseExchange):
         res = requests.post(url, headers=headers, data=json.dumps(body), timeout=5)
         if res.status_code == 200:
             self.access_token = res.json().get("access_token")
+            self.token_expiry = time.time() + 82800
             # 발급받은 토큰을 파일에 저장
             with open(token_file, "w") as f:
                 f.write(self.access_token)
@@ -44,7 +48,8 @@ class KISClient(BaseExchange):
             raise Exception(f"KIS Auth Failed: {res.text}")
 
     def _get_headers(self, tr_id: str):
-        if not self.access_token:
+        import time
+        if not self.access_token or time.time() >= self.token_expiry:
             self._auth()
             
         # 모의투자인 경우 TR_ID의 첫 글자 'T'를 'V'로 변경 (예: TTTC8434R -> VTTC8434R)

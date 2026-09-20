@@ -28,18 +28,17 @@ st.markdown("""
         div[data-testid="stHorizontalBlock"] {
             flex-direction: row !important;
             flex-wrap: nowrap !important; /* 아래로 넘어가지 않음 */
+            gap: 0.5rem !important; /* 간격 확보 */
+            justify-content: center !important;
         }
         div[data-testid="stHorizontalBlock"] > div {
-            width: 50% !important;
-            min-width: 50% !important;
-            max-width: 50% !important;
-            flex: 1 1 50% !important;
+            flex: 1 1 auto !important;
             padding: 0 0.2rem !important;
             display: block !important;
         }
-    /* 윈도우/모바일 공통: 극단적인 여백(Padding/Margin) 축소 */
+    /* 윈도우/모바일 공통: 상단 여백 확보(제목 가림 방지) 및 좌우 여백 축소 */
     .block-container {
-        padding-top: 1rem !important;
+        padding-top: 5rem !important; /* 가림 현상 완벽 방지를 위해 여백을 5rem으로 대폭 늘림 */
         padding-bottom: 1rem !important;
         padding-left: 1rem !important;
         padding-right: 1rem !important;
@@ -110,8 +109,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("📈 핑퐁 봇 대시보드")
-
 def fetch_status():
     try:
         r = requests.get(f"{API_URL}/status", timeout=1)
@@ -127,26 +124,75 @@ def current_sym(cfg):
 
 status_data = fetch_status()
 
+if not status_data:
+    st.error("백엔드 서버(FastAPI)에 연결할 수 없습니다.")
+    st.info("터미널에서 `python main.py` 를 실행하여 서버를 시작해 주세요.")
+    st.stop()
+
+current_cfg = status_data.get("config", {})
+curr_ex     = current_cfg.get("exchange", "kis")
+curr_mock   = current_cfg.get("mock_mode", True)
+curr_paper  = current_cfg.get("paper_trading", False)
+# [UI 테스트용] 한국투자(모의) 모드일 때 포지션이 비어있으면 강제로 더미 데이터를 주입합니다.
+if curr_ex == "kis" and curr_mock and not curr_paper:
+    if not status_data.get("positions"):
+        dummy_pos = []
+        bp = 83500
+        # 매도 10건 (현재가 위)
+        for i in range(1, 11):
+            if (100+i) not in st.session_state.get("dummy_cancelled_ids", []):
+                dummy_pos.append({"id": 100+i, "side": "sell", "avg_price": bp + (i * 2000), "quantity": 10 + (i*2), "symbol": "042660"})
+        # 매수 10건 (현재가 아래)
+        for i in range(1, 11):
+            if (200+i) not in st.session_state.get("dummy_cancelled_ids", []):
+                dummy_pos.append({"id": 200+i, "side": "buy", "avg_price": bp - (i * 2000), "quantity": 10 + (i*2), "symbol": "042660"})
+        status_data["positions"] = dummy_pos
+
+ex_name = "한국투자" if curr_ex == "kis" else "빗썸"
+if curr_paper:
+    mode_name = "테스트"
+    mode_badge = "🧪 테스트 (미전송)"
+elif curr_mock:
+    mode_name = "모의 계좌"
+    mode_badge = "🟢 모의 투자"
+else:
+    mode_name = "실전"
+    mode_badge = "🔴 실전 투자"
+
+# ── 백엔드 긴급 경보(알림) 표시 ────────────────────────
+alert_msg = status_data.get("state", {}).get("critical_alert")
+if alert_msg:
+    st.error(f"🚨 **[시스템 긴급 경보]** {alert_msg}")
+    st.write("")
+
+title_str = f"📈 {ex_name} ({mode_name})"
+
+# 상단 헤더 메뉴바(Deploy 등)에 제목이 가려지는 것을 방지하기 위해 강제로 빈 줄 1칸 확보
+st.markdown("<br>", unsafe_allow_html=True) 
+
+c_title, c_msg, c_sync = st.columns([5, 2, 2])
+with c_title:
+    st.markdown(f"### {title_str}")
+with c_msg:
+    if st.session_state.get("sync_msg"):
+        color = "#4CAF50" if "✅" in st.session_state.sync_msg else "#f44336"
+        st.markdown(f"<p style='text-align:right; margin-top:10px; font-weight:bold; color:{color};'>{st.session_state.sync_msg}</p>", unsafe_allow_html=True)
+        st.session_state.sync_msg = None
+with c_sync:
+    if st.button("🔄 잔고 동기화", use_container_width=True):
+        try:
+            requests.post(f"{API_URL}/refresh_balance", timeout=15)
+            st.session_state.sync_msg = "✅ 동기화 완료"
+        except:
+            st.session_state.sync_msg = "❌ 통신 실패"
+        st.rerun()
+
 # ══════════════════════════════════════════════════════
 # 사이드바
 # ══════════════════════════════════════════════════════
-tab_dash, tab_order, tab_settings = st.tabs(["📊 현황 대시보드", "🛒 주문 생성 및 전송", "⚙️ 시스템 설정"])
+tab_dash, tab_order, tab_history, tab_settings = st.tabs(["📊 현황 대시보드", "🛒 주문 생성", "💸 거래 내역", "⚙️ 시스템 설정"])
 
 with tab_settings:
-    current_cfg = status_data.get("config", {}) if status_data else {}
-    curr_ex     = current_cfg.get("exchange", "kis")
-    curr_mock   = current_cfg.get("mock_mode", True)
-    curr_paper  = current_cfg.get("paper_trading", False)
-
-    # 현재 모드 배지
-    if curr_paper:
-        mode_badge = "🧪 테스트 (미전송)"
-    elif curr_mock:
-        mode_badge = "🟢 모의 계좌"
-    else:
-        mode_badge = "🔴 실전 투자"
-
-    st.markdown(f"**현재 적용 모드**: `{curr_ex.upper()}` · `{current_sym(current_cfg)}` · **{mode_badge}**")
     st.header("⚙️ 시스템 제어")
 
     # ── 거래소 / 모드 선택 ───────────────────────────
@@ -225,52 +271,9 @@ with tab_settings:
 
     pass
 
-    # ── 봇 제어 ─────────────────────────────────────
-    st.subheader("봇 자동 매매 제어")
-    is_running = status_data.get("running", False) if status_data else False
-    if is_running:
-        st.success("🟢 봇 코어 루프가 실행 중입니다.")
-    else:
-        st.warning("🔴 봇 코어 루프가 정지되어 있습니다.")
-
-    c_b1, c_b2 = st.columns(2)
-    with c_b1:
-        if st.button("▶️ 시작", use_container_width=True, disabled=is_running):
-            try: requests.post(f"{API_URL}/start", timeout=5); st.rerun()
-            except: pass
-    with c_b2:
-        if st.button("⏹️ 정지", use_container_width=True, disabled=not is_running):
-            try: requests.post(f"{API_URL}/stop", timeout=5); st.rerun()
-            except: pass
-
-    if st.button("🔄 봇 서버 재시작", use_container_width=True):
-        msg_placeholder = st.empty()
-        try:
-            requests.post(f"{API_URL}/system/restart", timeout=3)
-            msg_placeholder.info("재시작 명령 전송. 서버 응답을 대기 중입니다... (최대 10초)")
-            
-            success = False
-            for _ in range(10):
-                time.sleep(1.0)
-                try:
-                    res = requests.get(f"{API_URL}/status", timeout=1)
-                    if res.status_code == 200:
-                        success = True
-                        break
-                except:
-                    pass
-            
-            if success:
-                msg_placeholder.success("✅ 서버 재시작 완료!")
-                time.sleep(1)
-                st.rerun()
-            else:
-                msg_placeholder.error("❌ 서버 재시작 실패 또는 응답 시간 초과")
-        except Exception as e:
-            msg_placeholder.error("❌ 명령 전송 실패")
-
     pass
 
+    # 시스템 공통 설정과 합치기 위해 삭제됨
     # ── 매매 알고리즘 파라미터 ──────────────────────
 with tab_order:
     with st.expander("⚙️ 그리드 파라미터 설정 (터치하여 열기/닫기)", expanded=not st.session_state.get("show_grid_preview", False)):
@@ -303,7 +306,7 @@ with tab_order:
             except Exception as e:
                 st.error(f"서버조회 실패: {e}")
 
-        with st.expander("⚙️ 그리드 파라미터 설정 (펼치기/접기)", expanded=not st.session_state.get("show_grid_preview", False)):
+        if True: # 내부 중복 expander 제거됨
             # 2. 매도 간격 / 매도주문 수량 (입력창 가로 2개)
             col_sell_1, col_sell_2 = st.columns(2)
             with col_sell_1:
@@ -343,13 +346,13 @@ with tab_order:
                     for i in range(1, int(sell_count) + 1):
                         s_price = bp + (take_profit * i)
                         s_price = (s_price // 1000) * 1000 + 900 if is_kis else round(s_price, 2)
-                        sell_list.append({"선택": True, "방향": "매도", "가격": int(s_price), "수량": int(qty)})
+                        sell_list.append({"선택": True, "가격": int(s_price), "수량": int(qty)})
                 if grid_direction in ["매수만", "매수/매도 모두"]:
                     for i in range(1, int(buy_count) + 1):
                         b_price = bp - (grid_interval * i)
                         if b_price <= 0: break
                         b_price = (b_price // 1000) * 1000 + 100 if is_kis else round(b_price, 2)
-                        buy_list.append({"선택": True, "방향": "매수", "가격": int(b_price), "수량": int(qty)})
+                        buy_list.append({"선택": True, "가격": int(b_price), "수량": int(qty)})
                 return sell_list, buy_list
 
             # 6. 균등그리드생성 (버튼 1개)
@@ -370,7 +373,7 @@ with tab_order:
             with stair_c2:
                 stair_add_qty = st.number_input("증액 수량", min_value=1, value=5 if is_kis else 500, step=1, help="계단 한 단계당 추가되는 수량")
 
-            stair_direction = st.radio("계단 적용 방향", ["매수매도계단", "매수계단", "매도계단"], index=1, horizontal=True)
+            stair_direction = st.radio("계단 적용 방향", ["매수매도계단", "매수계단", "매도계단"], index=0, horizontal=True)
 
             # 8. 계단형그리드생성 (버튼 1개)
             if st.button("📈 계단형 그리드 생성", use_container_width=True):
@@ -387,7 +390,7 @@ with tab_order:
                         else:
                             qty = int(order_quantity)
                         
-                        sell_list.append({"선택": True, "방향": "매도", "가격": int(s_price), "수량": qty})
+                        sell_list.append({"선택": True, "가격": int(s_price), "수량": qty})
                     
                 if grid_direction in ["매수만", "매수/매도 모두"]:
                     for i in range(1, int(buy_count) + 1):
@@ -401,13 +404,82 @@ with tab_order:
                         else:
                             qty = int(order_quantity)
                         
-                        buy_list.append({"선택": True, "방향": "매수", "가격": int(b_price), "수량": qty})
+                        buy_list.append({"선택": True, "가격": int(b_price), "수량": qty})
 
                 st.session_state.grid_sell_list = sell_list
                 st.session_state.grid_buy_list = buy_list
                 st.session_state.show_grid_preview = True
                 st.session_state.confirm_batch_order = False
                 st.rerun()
+
+            st.write("")
+            st.write("")
+            
+            # 12. 파라미터 저장 / 초기화 (버튼 2개)
+            btn_p1, btn_p2 = st.columns(2)
+            with btn_p1:
+                if st.button("💾 파라미터 저장", use_container_width=True):
+                    st.session_state.confirm_param_save = True
+                    st.session_state.confirm_param_reset = False
+                    st.rerun()
+            with btn_p2:
+                if st.button("🔄 파라미터 초기화", use_container_width=True):
+                    st.session_state.confirm_param_reset = True
+                    st.session_state.confirm_param_save = False
+                    st.rerun()
+                
+            if st.session_state.get("confirm_param_save"):
+                st.warning("현재 입력된 파라미터(기준가, 간격, 수량)를 다음 번에도 유지되도록 저장하시겠습니까?")
+                conf_p1, conf_p2 = st.columns(2)
+                with conf_p1:
+                    if st.button("네, 실행합니다", key="yes_param_save", use_container_width=True):
+                        try:
+                            requests.post(f"{API_URL}/config", json={
+                                current_exchange: {
+                                    "base_price": base_price, "grid_interval": grid_interval,
+                                    "take_profit": take_profit, "order_quantity": order_quantity
+                                }
+                            }, timeout=5)
+                            st.session_state.param_result_msg = "그리드 파라미터 기본값으로 저장 완료"
+                        except Exception as e:
+                            st.session_state.param_result_msg = f"저장 실패: {e}"
+                        st.session_state.confirm_param_save = None
+                        st.rerun()
+                with conf_p2:
+                    if st.button("취소", key="no_param_save", use_container_width=True):
+                        st.session_state.confirm_param_save = None
+                        st.rerun()
+
+            if st.session_state.get("confirm_param_reset"):
+                st.warning("그리드 파라미터를 권장 기본값으로 완전 초기화하시겠습니까?")
+                conf_r1, conf_r2 = st.columns(2)
+                with conf_r1:
+                    if st.button("네, 초기화합니다", key="yes_param_reset", use_container_width=True):
+                        try:
+                            def_grid = 2000 if is_kis else 10
+                            def_prof = 2000 if is_kis else 10
+                            def_qty  = 10   if is_kis else 1000
+                            requests.post(f"{API_URL}/config", json={
+                                current_exchange: {
+                                    "base_price": 0, "grid_interval": def_grid,
+                                    "take_profit": def_prof, "order_quantity": def_qty
+                                }
+                            }, timeout=5)
+                            st.session_state.param_result_msg = "그리드 파라미터 완전 초기화 완료"
+                        except Exception as e:
+                            st.session_state.param_result_msg = f"초기화 실패: {e}"
+                        st.session_state.confirm_param_reset = None
+                        st.rerun()
+                with conf_r2:
+                    if st.button("취소", key="no_param_reset", use_container_width=True):
+                        st.session_state.confirm_param_reset = None
+                        st.rerun()
+                        
+            if st.session_state.get("param_result_msg"):
+                st.success(st.session_state.param_result_msg)
+                if st.button("확인", key="ok_param"):
+                    st.session_state.param_result_msg = None
+                    st.rerun()
 
 with tab_settings:
     # ── 시스템 공통 설정 ──
@@ -416,7 +488,7 @@ with tab_settings:
     # 10. 자동동기화 간격
     sync_c1, sync_c2 = st.columns([3, 1])
     with sync_c1:
-        auto_sync_interval = st.number_input("자동동기화 간격 (분)", min_value=1, value=int(cfg.get("auto_sync_interval", 30)), step=1)
+        auto_sync_interval = st.number_input("자동동기화 간격 (분)", min_value=1, value=int(cfg.get("auto_sync_interval", 1)), step=1)
     with sync_c2:
         st.write("")
         if st.button("입력", key="btn_sync", use_container_width=True):
@@ -538,98 +610,78 @@ with tab_settings:
     remove_dup = st.toggle("중복주문제거", value=True, help="켜져 있을 때는 중복 주문 자동 제거해서 주문해줌. 꺼져 있을 때는 기존과 동일함")
     st.session_state.remove_dup = remove_dup
 
-    # 12. 파라미터 저장 / 초기화 (버튼 2개)
-    btn_p1, btn_p2 = st.columns(2)
-    with btn_p1:
-        if st.button("💾 파라미터 저장", use_container_width=True):
-            st.session_state.confirm_param_save = True
-            st.session_state.confirm_param_reset = False
-            st.rerun()
-    with btn_p2:
-        if st.button("🔄 파라미터 초기화", use_container_width=True):
-            st.session_state.confirm_param_reset = True
-            st.session_state.confirm_param_save = False
-            st.rerun()
-        
-    if st.session_state.get("confirm_param_save"):
-        st.warning("현재 그리드 파라미터(기준가, 간격, 수량)를 기본값으로 저장하시겠습니까?")
-        conf_p1, conf_p2 = st.columns(2)
-        with conf_p1:
-            if st.button("네, 실행합니다", key="yes_param_save", use_container_width=True):
-                try:
-                    requests.post(f"{API_URL}/config", json={
-                        current_exchange: {
-                            "base_price": base_price, "grid_interval": grid_interval,
-                            "take_profit": take_profit, "order_quantity": order_quantity
-                        }
-                    }, timeout=5)
-                    st.session_state.param_result_msg = "그리드 파라미터 저장 완료"
-                except Exception as e:
-                    st.session_state.param_result_msg = f"저장 실패: {e}"
-                st.session_state.confirm_param_save = None
-                st.rerun()
-        with conf_p2:
-            if st.button("취소", key="no_param_save", use_container_width=True):
-                st.session_state.confirm_param_save = None
-                st.rerun()
+    # 파라미터 저장/초기화 블록 삭제됨
 
-    if st.session_state.get("confirm_param_reset"):
-        st.warning("그리드 파라미터를 권장 기본값으로 완전 초기화하시겠습니까?")
-        conf_r1, conf_r2 = st.columns(2)
-        with conf_r1:
-            if st.button("네, 초기화합니다", key="yes_param_reset", use_container_width=True):
+    st.write("")
+    st.write("")
+    
+    st.subheader("🤖 시스템 상태")
+    st.subheader("엔진 구동 상태")
+    col_a, col_b = st.columns(2)
+    ex_cfg_disp = status_data.get("config", {}).get(status_data.get("config", {}).get("exchange", "bithumb"), {}) if status_data else {}
+    curr_ex_disp = status_data.get("config", {}).get("exchange", "bithumb") if status_data else "bithumb"
+    with col_a:
+        st.write(f"**상태:** {'🟢 가동 중' if status_data.get('running', False) else '🔴 정지됨'}")
+        st.write(f"**거래소:** {curr_ex_disp.upper()}")
+        st.write(f"**모드:** {mode_badge}")
+    with col_b:
+        st.write(f"**기준가:** {ex_cfg_disp.get('base_price', 0):,}")
+        st.write(f"**그리드 간격:** {ex_cfg_disp.get('grid_interval', '-')}")
+        st.write(f"**익절 간격:** {ex_cfg_disp.get('take_profit', '-')}")
+        st.write(f"**1회 주문 수량:** {ex_cfg_disp.get('order_quantity', '-')}")
+
+    st.write("")
+    st.write("")
+
+    # ── 봇 제어 ─────────────────────────────────────
+    st.subheader("🤖 봇 자동 매매 제어")
+    is_running = status_data.get("running", False) if status_data else False
+    if is_running:
+        st.success("🟢 봇 코어 루프가 실행 중입니다.")
+    else:
+        st.warning("🔴 봇 코어 루프가 정지되어 있습니다.")
+
+    c_b1, c_b2 = st.columns(2)
+    with c_b1:
+        if st.button("▶️ 시작", use_container_width=True, disabled=is_running):
+            try: requests.post(f"{API_URL}/start", timeout=5); st.rerun()
+            except: pass
+    with c_b2:
+        if st.button("⏹️ 정지", use_container_width=True, disabled=not is_running):
+            try: requests.post(f"{API_URL}/stop", timeout=5); st.rerun()
+            except: pass
+
+    if st.button("🔄 봇 서버 재시작", use_container_width=True):
+        msg_placeholder = st.empty()
+        try:
+            requests.post(f"{API_URL}/system/restart", timeout=3)
+            msg_placeholder.info("재시작 명령 전송. 서버 응답을 대기 중입니다... (최대 10초)")
+            
+            success = False
+            for _ in range(10):
+                time.sleep(1.0)
                 try:
-                    def_grid = 2000 if is_kis else 10
-                    def_prof = 2000 if is_kis else 10
-                    def_qty  = 10   if is_kis else 1000
-                    requests.post(f"{API_URL}/config", json={
-                        current_exchange: {
-                            "base_price": 0, "grid_interval": def_grid,
-                            "take_profit": def_prof, "order_quantity": def_qty
-                        }
-                    }, timeout=5)
-                    st.session_state.param_result_msg = "그리드 파라미터 초기화 완료"
-                except Exception as e:
-                    st.session_state.param_result_msg = f"초기화 실패: {e}"
-                st.session_state.confirm_param_reset = None
+                    res = requests.get(f"{API_URL}/status", timeout=1)
+                    if res.status_code == 200:
+                        success = True
+                        break
+                except:
+                    pass
+            
+            if success:
+                msg_placeholder.success("✅ 서버 재시작 완료!")
+                time.sleep(1)
                 st.rerun()
-        with conf_r2:
-            if st.button("취소", key="no_param_reset", use_container_width=True):
-                st.session_state.confirm_param_reset = None
-                st.rerun()
-                
-    if st.session_state.get("param_result_msg"):
-        st.success(st.session_state.param_result_msg)
-        if st.button("확인", key="ok_param"):
-            st.session_state.param_result_msg = None
-            st.rerun()
+            else:
+                msg_placeholder.error("❌ 서버 재시작 실패 또는 응답 시간 초과")
+        except Exception as e:
+            msg_placeholder.error("❌ 명령 전송 실패")
 # ══════════════════════════════════════════════════════
 # 메인 대시보드
 # ══════════════════════════════════════════════════════
-if not status_data:
-    st.error("백엔드 서버(FastAPI)에 연결할 수 없습니다.")
-    st.info("터미널에서 `python main.py` 를 실행하여 서버를 시작해 주세요.")
-    st.stop()
 
 # ── 메트릭 카드 ──────────────────────────────────────
 with tab_dash:
-    c1, c2, c3, c4 = st.columns(4)
-    is_connected = status_data.get("exchange_connected", False)
-
-    with c1:
-        st.metric("총 자산 (예수금)", f"{status_data.get('balance', 0):,} 원",
-                  delta="연동 완료" if is_connected else "연동 실패/대기",
-                  delta_color="normal" if is_connected else "off")
-        if st.button("🔄 잔고 동기화", use_container_width=True):
-            try: requests.post(f"{API_URL}/refresh_balance", timeout=15); st.rerun()
-            except: st.error("동기화 실패")
-    with c2:
-        st.metric("누적 실현 수익", f"{status_data.get('total_profit', 0):,} 원", delta="0.00%")
-    with c3:
-        st.metric("금일 체결 횟수", f"{status_data.get('trade_count', 0)} 회")
-    with c4:
-        st.metric("활성 거래중 노드", f"{len(status_data.get('positions', []))} 개")
-
     pass
 
 
@@ -642,41 +694,120 @@ with tab_order:
         with st.container(border=True):
             hd_col1, hd_col2 = st.columns([4, 1])
             with hd_col1:
-                st.subheader("📋 그리드 주문 확인 및 편집")
+                st.markdown("#### 📋 그리드 주문 확인 및 편집")
             with hd_col2:
                 if st.button("✖ 닫기", use_container_width=True):
                     st.session_state.show_grid_preview   = False
                     st.session_state.confirm_batch_order = False
                     st.rerun()
 
-            # 요약 정보
-            checked_sell_cnt = sum(1 for r in s_list if r.get("선택", True))
-            checked_buy_cnt  = sum(1 for r in b_list if r.get("선택", True))
-            total_buy_amt    = sum(r.get("가격", 0) * r.get("수량", 0) for r in b_list if r.get("선택", True))
-            sum_c1, sum_c2, sum_c3 = st.columns(3)
-            with sum_c1: st.metric("선택된 매도 주문", f"{checked_sell_cnt}건")
-            with sum_c2: st.metric("선택된 매수 주문", f"{checked_buy_cnt}건")
-            with sum_c3: st.metric("총 매수 예상금액", f"{total_buy_amt:,} 원")
+            # 요약 정보 (선택된 주문 건수는 삭제 요청으로 제거됨)
 
             has_sell = len(s_list) > 0
             has_buy  = len(b_list) > 0
 
+            from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, DataReturnMode, JsCode
+            import pandas as pd
+
+            def render_aggrid(list_data, key_suffix, color):
+                if not list_data:
+                    return []
+                df = pd.DataFrame(list_data)
+                if "가격" not in df.columns or "수량" not in df.columns:
+                    return []
+                    
+                gb = GridOptionsBuilder.from_dataframe(df[["가격", "수량"]])
+                
+                # pre-select based on existing "선택" key
+                selected_idx = [i for i, r in enumerate(list_data) if r.get("선택", True)]
+                
+                gb.configure_selection(
+                    selection_mode="multiple", 
+                    use_checkbox=True, 
+                    header_checkbox=True
+                )
+                
+                gb.configure_column("가격", editable=True, cellStyle={'textAlign': 'center'}, width=120, type=["numericColumn"])
+                gb.configure_column("수량", editable=True, cellStyle={'textAlign': 'center'}, width=120, type=["numericColumn"])
+                
+                # 초기에 아무것도 선택되어 있지 않으면(첫 로드 시) 전체 선택 수행
+                js_init = """
+                function(params) {
+                    var selectedCount = params.api.getSelectedNodes().length;
+                    if (selectedCount === 0) {
+                        params.api.selectAll();
+                    }
+                }
+                """
+                
+                gb.configure_grid_options(
+                    onFirstDataRendered=JsCode(js_init),
+                    rowHeight=35, 
+                    singleClickEdit=True
+                )
+                
+                # [UI 커스텀] Streamlit 테마의 기본 선택 색상(파란색)을 강제로 덮어씌우기 위한 CSS
+                # .ag-theme-streamlit과 ::before 가상 클래스를 명시하여 CSS 우선순위를 높여 강제 적용(!important)합니다.
+                custom_css = {
+                    ".ag-row-selected": {
+                        "background-color": f"{color} !important",
+                        "color": "black !important"
+                    },
+                    ".ag-row-selected::before": {
+                        "background-color": f"{color} !important"
+                    },
+                    ".ag-theme-streamlit .ag-row-selected": {
+                        "background-color": f"{color} !important"
+                    },
+                    ".ag-theme-streamlit .ag-row-selected::before": {
+                        "background-color": f"{color} !important"
+                    }
+                }
+                
+                resp = AgGrid(
+                    df[["가격", "수량"]],
+                    gridOptions=gb.build(),
+                    update_mode=GridUpdateMode.SELECTION_CHANGED | GridUpdateMode.VALUE_CHANGED,
+                    data_return_mode=DataReturnMode.AS_INPUT,
+                    fit_columns_on_grid_load=True,
+                    allow_unsafe_jscode=True,
+                    theme="streamlit",
+                    custom_css=custom_css,
+                    key=f"grid_{key_suffix}",
+                    height=420
+                )
+                
+                # selected_rows가 DataFrame 객체로 반환될 경우를 대비해 항상 dict 리스트로 변환
+                sel = resp.get("selected_rows", [])
+                if isinstance(sel, pd.DataFrame):
+                    return sel.to_dict("records")
+                return sel if sel else []
+
+            edited_sell = []
+            edited_buy = []
+
+            # [캐싱 방지] Streamlit이 AgGrid 컴포넌트를 캐싱하여 색상 변경이 무시되는 것을 막기 위해
+            # key 값에 버전을 명시하여 강제로 새로 그리게 만듭니다. (예: "sell_v3")
             if has_sell and has_buy:
                 g_c1, g_c2 = st.columns(2)
                 with g_c1:
                     st.markdown("**🔵 매도 리스트**")
-                    edited_sell = st.data_editor(s_list, num_rows="dynamic", key="sell_editor", use_container_width=True, height=250)
+                    edited_sell = render_aggrid(s_list, "sell_v3", "#E0F2FE")
+                    sell_qty = sum(int(r.get("수량", 0)) for r in edited_sell)
+                    st.markdown(f"<p style='font-size: 20px; margin-top: 5px;'><b>총 매도 수량:</b> {sell_qty:,} 주</p>", unsafe_allow_html=True)
                 with g_c2:
                     st.markdown("**🔴 매수 리스트**")
-                    edited_buy  = st.data_editor(b_list, num_rows="dynamic", key="buy_editor",  use_container_width=True, height=250)
+                    edited_buy = render_aggrid(b_list, "buy_v3", "#FCE4EC")
+                    buy_amt = sum(int(r.get("가격", 0)) * int(r.get("수량", 0)) for r in edited_buy)
+                    st.markdown(f"<p style='font-size: 20px; margin-top: 5px;'><b>총 매수 예상금액:</b> {buy_amt:,} 원</p>", unsafe_allow_html=True)
             elif has_sell:
-                edited_sell = st.data_editor(s_list, num_rows="dynamic", key="sell_editor_only", use_container_width=True, height=250)
-                edited_buy  = []
+                edited_sell = render_aggrid(s_list, "sell_only_v3", "#E0F2FE")
+                sell_qty = sum(int(r.get("수량", 0)) for r in edited_sell)
+                st.markdown(f"<p style='font-size: 20px; margin-top: 5px;'><b>총 매도 수량:</b> {sell_qty:,} 주</p>", unsafe_allow_html=True)
             elif has_buy:
-                edited_buy  = st.data_editor(b_list, num_rows="dynamic", key="buy_editor_only",  use_container_width=True, height=250)
-                edited_sell = []
-            else:
-                edited_sell = edited_buy = []
+                edited_buy = render_aggrid(b_list, "buy_only_v3", "#FCE4EC")
+                buy_amt = sum(int(r.get("가격", 0)) * int(r.get("수량", 0)) for r in edited_buy)
+                st.markdown(f"<p style='font-size: 20px; margin-top: 5px;'><b>총 매수 예상금액:</b> {buy_amt:,} 원</p>", unsafe_allow_html=True)
 
     
             # 모바일 환경에서 그리드가 생성되었을 때 사이드바를 자동으로 닫아주는 JS 트릭
@@ -694,8 +825,16 @@ with tab_order:
             ''', height=0)
 
             # 체크박스 선택된 것만 카운트
-            checked_sell = [r for r in edited_sell if r.get("선택", True) and r.get("가격") and r.get("수량")]
-            checked_buy  = [r for r in edited_buy  if r.get("선택", True) and r.get("가격") and r.get("수량")]
+            def _to_list(ed):
+                if isinstance(ed, pd.DataFrame):
+                    return ed.to_dict("records")
+                return ed if ed else []
+                
+            e_sell_list = _to_list(edited_sell)
+            e_buy_list  = _to_list(edited_buy)
+
+            checked_sell = [r for r in e_sell_list if r.get("선택", True) and r.get("가격") and r.get("수량")]
+            checked_buy  = [r for r in e_buy_list  if r.get("선택", True) and r.get("가격") and r.get("수량")]
             total_checked = len(checked_sell) + len(checked_buy)
 
             if total_checked > 0:
@@ -815,13 +954,10 @@ with tab_order:
             st.rerun()
 
     # ── 수동 주문 제어 ────────────────────────────────────
-    st.subheader("🕹️ 수동 주문 제어 (지정가 전용)")
-
-    m_c0, m_c1, m_c2, m_c3, m_c4 = st.columns([1.2, 1.6, 1.2, 1.5, 1.3])
-
-    with m_c0:
-        st.write("")
-        st.write("")
+    col_t1, col_t2 = st.columns([3, 1])
+    with col_t1:
+        st.subheader("🕹️ 수동 주문 제어 (지정가 전용)")
+    with col_t2:
         if st.button("🔎 현재가 조회", use_container_width=True):
             try:
                 sym   = current_sym(current_cfg)
@@ -832,41 +968,53 @@ with tab_order:
                         st.session_state.manual_price = int(p)
                         st.rerun()
             except: pass
-        if st.session_state.get("manual_price", 0) > 0:
-            st.caption(f"현재가: **{st.session_state.manual_price:,}** 원")
+            
+        # 1순위: 수동조회 현재가 / 2순위: 서버 실시간 현재가 / 3순위: 설정된 기준가
+        display_price = st.session_state.get("manual_price", 0)
+        if display_price <= 0 and status_data:
+            display_price = float(status_data.get("current_price", 0))
+        if display_price <= 0:
+            display_price = float(current_cfg.get(curr_ex, {}).get("base_price", 0))
+            
+        if display_price > 0:
+            st.caption(f"현재(기준)가: **{int(display_price):,}** 원")
 
-    with m_c1:
-        default_p = st.session_state.get("manual_price", 0) or (83500 if curr_ex == "kis" else 1000)
-        m_step    = 50 if curr_ex == "kis" else 1
-        m_price   = st.number_input("주문 단가 (원)", min_value=1, value=default_p, step=m_step)
+    # 입력창 2열 (주문 단가, 주문 수량 나란히 배치)
+    default_p = int(display_price) if display_price > 0 else (83500 if curr_ex == "kis" else 1000)
+    m_step    = 50 if curr_ex == "kis" else 1
+    
+    c_in1, c_in2 = st.columns(2)
+    with c_in1:
+        m_price = st.number_input("주문 단가 (원)", min_value=1, value=default_p, step=m_step)
+    with c_in2:
+        m_qty   = st.number_input("주문 수량", min_value=1, value=10 if curr_ex == "kis" else 1000, step=1)
 
-    with m_c2:
-        m_qty = st.number_input("주문 수량", min_value=1, value=10 if curr_ex == "kis" else 1000, step=1)
+    st.write("") # 세로 여백 추가
+    st.write("") # 세로 여백 추가
 
-    with m_c3:
-        st.write("")
-        st.write("")
-        c_buy, c_sell = st.columns(2)
-        with c_buy:
-            if st.button("🔴 매수", use_container_width=True):
-                if m_price > 0:
-                    st.session_state.confirm_manual_order  = {"side": "buy",  "quantity": int(m_qty), "price": int(m_price)}
-                    st.session_state.manual_order_result   = None
-                    st.rerun()
-        with c_sell:
-            if st.button("🔵 매도", use_container_width=True):
-                if m_price > 0:
-                    st.session_state.confirm_manual_order  = {"side": "sell", "quantity": int(m_qty), "price": int(m_price)}
-                    st.session_state.manual_order_result   = None
-                    st.rerun()
+    # 매수 매도 (버튼 가운데 정렬을 위해 양옆 여백 컬럼 추가)
+    c_space1, c_buy, c_sell, c_space2 = st.columns([1, 2, 2, 1])
+    with c_buy:
+        if st.button("🔴 매수", use_container_width=True):
+            if m_price > 0:
+                st.session_state.confirm_manual_order  = {"side": "buy",  "quantity": int(m_qty), "price": int(m_price)}
+                st.session_state.manual_order_result   = None
+                st.rerun()
+    with c_sell:
+        if st.button("🔵 매도", use_container_width=True):
+            if m_price > 0:
+                st.session_state.confirm_manual_order  = {"side": "sell", "quantity": int(m_qty), "price": int(m_price)}
+                st.session_state.manual_order_result   = None
+                st.rerun()
 
-    with m_c4:
-        st.write("")
-        st.write("")
-        if st.button("🗑️ 미체결 전체 취소", use_container_width=True, type="primary"):
-            st.session_state.confirm_cancel_all  = True
-            st.session_state.manual_order_result = None
-            st.rerun()
+    st.write("") # 세로 여백 추가
+    st.write("") # 세로 여백 추가
+
+    # 미체결 전체 취소 (버튼 1개)
+    if st.button("🗑️ 미체결 전체 취소", use_container_width=True, type="primary"):
+        st.session_state.confirm_cancel_all  = True
+        st.session_state.manual_order_result = None
+        st.rerun()
 
     # 수동 주문 확인창
     if st.session_state.get("confirm_manual_order"):
@@ -922,8 +1070,7 @@ with tab_order:
 with tab_dash:
 
     pass
-    st.subheader("📊 진입 거래망 현황")
-    st.subheader("🕸️ 대기 중인 매수/매도 그리드")
+    st.subheader("📊 주문 현황")
     positions = status_data.get("positions", [])
 
     if positions:
@@ -945,9 +1092,43 @@ with tab_dash:
 
         view_mode = st.radio("보기 방식",
                              ["📉 차트 뷰", "📊 호가창 정렬", "📝 주문순 정렬"],
-                             horizontal=True)
+                             horizontal=True,
+                             label_visibility="collapsed")
+
+        from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
+        
+        def _render_dash_grid(df_disp, key_suffix, color="#E0F2FE"):
+            gb = GridOptionsBuilder.from_dataframe(df_disp)
+            gb.configure_selection("multiple", use_checkbox=True)
+            gb.configure_column("id", hide=True)
+            gb.configure_column("진입 가격", type=["numericColumn", "numberColumnFilter"], valueFormatter="x.toLocaleString() + ' ₩'")
+            gb.configure_column("수량", type=["numericColumn", "numberColumnFilter"], valueFormatter="x.toLocaleString() + ' 주'")
+            
+            custom_css = {
+                ".ag-row-selected": { "background-color": f"{color} !important", "color": "black !important" },
+                ".ag-row-selected::before": { "background-color": f"{color} !important" },
+                ".ag-theme-streamlit .ag-row-selected": { "background-color": f"{color} !important" },
+                ".ag-theme-streamlit .ag-row-selected::before": { "background-color": f"{color} !important" }
+            }
+            
+            resp = AgGrid(
+                df_disp,
+                gridOptions=gb.build(),
+                update_mode=GridUpdateMode.SELECTION_CHANGED,
+                fit_columns_on_grid_load=True,
+                allow_unsafe_jscode=True,
+                theme="streamlit",
+                custom_css=custom_css,
+                key=f"dash_grid_{key_suffix}",
+                height=350
+            )
+            sel = resp.get("selected_rows", [])
+            if sel is None:
+                return []
+            return sel.to_dict("records") if isinstance(sel, pd.DataFrame) else sel
 
         if view_mode == "📉 차트 뷰":
+            selected_pos = []
             import plotly.graph_objects as go
 
             # 차트뷰에서는 같은 가격대의 수량을 합산하여 깔끔하게 표시
@@ -961,6 +1142,20 @@ with tab_dash:
                 chart_current_price = float(status_data.get("current_price", 0))
             if chart_current_price <= 0:
                 chart_current_price = st.session_state.get("manual_price", 0)
+            
+            # 위에서 못 가져왔다면 API 찔러서 강제로라도 실시간 현재가를 가져오기
+            if chart_current_price <= 0:
+                try:
+                    sym = current_sym(current_cfg)
+                    p_res = requests.get(f"{API_URL}/price?exchange={curr_ex}&symbol={sym}", timeout=1)
+                    if p_res.status_code == 200:
+                        chart_current_price = float(p_res.json().get("price", 0))
+                except:
+                    pass
+                    
+            # 3순위: 그래도 0원이면 설정된 기준가(base_price)를 현재가로 표시
+            if chart_current_price <= 0:
+                chart_current_price = float(current_cfg.get(curr_ex, {}).get("base_price", 0))
 
             # 매도 그리드 수평선 (파란색, 얇은 점선)
             for _, row in chart_sell_df.iterrows():
@@ -980,15 +1175,15 @@ with tab_dash:
                 fig.add_annotation(x=1.02, xref="paper", y=p, text=f"매수 {p:,} / {q}주",
                                    showarrow=False, font=dict(color="#e05050", size=11), xanchor="left")
 
-            # 현재가 굵은 수평선 (노란색)
+            # 현재가 굵은 수평선 (주황색, 파스텔 배경에 어울리게 변경)
             if chart_current_price > 0:
                 fig.add_shape(type="line", x0=0, x1=1, xref="paper",
                               y0=chart_current_price, y1=chart_current_price,
-                              line=dict(color="#f0c040", width=3))
+                              line=dict(color="#FF9800", width=3))
                 fig.add_annotation(x=0.5, xref="paper", y=chart_current_price,
                                    text=f"━━ 현재가 {int(chart_current_price):,} ━━",
-                                   showarrow=False, font=dict(color="#f0c040", size=14, family="monospace"),
-                                   bgcolor="rgba(30,30,60,0.8)")
+                                   showarrow=False, font=dict(color="#FFFFFF", size=14, family="monospace"),
+                                   bgcolor="rgba(255,152,0,0.85)")
 
             # Y축 범위 설정
             all_prices = list(sell_df["avg_price"]) + list(buy_df["avg_price"])
@@ -1001,63 +1196,112 @@ with tab_dash:
                 fig.update_yaxes(range=[y_min - margin, y_max + margin])
 
             fig.update_layout(
-                title="그리드 현황 (가격 기준 분포)",
-                yaxis_title="가격 (원)",
                 height=550,
                 xaxis=dict(visible=False),
-                plot_bgcolor="#1a1a2e",
-                paper_bgcolor="#16213e",
-                font_color="#e0e0e0",
-                margin=dict(r=180),  # 우측 annotation 공간
+                plot_bgcolor="#F4F6F9",  # 부드러운 파스텔톤 (연한 블루그레이)
+                paper_bgcolor="#F4F6F9", # 부드러운 파스텔톤
+                font_color="#333333",    # 배경이 밝아졌으므로 폰트는 어둡게
+                margin=dict(l=10, r=120, t=10, b=10),  # 여백 최소화 (우측은 글씨를 위해 약간 확보)
             )
-            fig.update_yaxes(tickformat=",", gridcolor="rgba(255,255,255,0.1)")
+            fig.update_yaxes(tickformat=",", gridcolor="rgba(0,0,0,0.05)")
             st.plotly_chart(fig, use_container_width=True)
 
-        elif view_mode == "📊 호가창 정렬":
-            # 매도(높→낮) + 매수(높→낮) 가격순 정렬
-            combined = pd.concat([sell_df, buy_df]).reset_index(drop=True)
-            combined.insert(0, "순번", range(1, len(combined) + 1))
-            disp = combined[["순번", "side_kor", "avg_price", "quantity"]].copy()
-            disp.columns = ["순번", "방향", "진입 가격", "수량"]
-            st.dataframe(disp, use_container_width=True, hide_index=True,
-                         column_config={
-                             "진입 가격": st.column_config.NumberColumn(format="%d ₩"),
-                             "수량":      st.column_config.NumberColumn(format="%d 주"),
-                         })
-
-        else:  # 주문순 정렬
-            df_ordered = df.reset_index(drop=True)
-            df_ordered.insert(0, "순번", range(1, len(df_ordered) + 1))
-            disp = df_ordered[["순번", "side_kor", "avg_price", "quantity", "symbol"]].copy()
-            disp.columns = ["순번", "방향", "진입 가격", "수량", "종목"]
-            st.dataframe(disp, use_container_width=True, hide_index=True,
-                         column_config={
-                             "진입 가격": st.column_config.NumberColumn(format="%d ₩"),
-                             "수량":      st.column_config.NumberColumn(format="%d 주"),
-                         })
+        elif view_mode in ["📊 호가창 정렬", "📝 주문순 정렬"]:
+            st.write("")
+            if view_mode == "📝 주문순 정렬":
+                s_df = sell_df.sort_values("id") if "id" in sell_df.columns else sell_df
+                b_df = buy_df.sort_values("id") if "id" in buy_df.columns else buy_df
+            else:
+                s_df = sell_df
+                b_df = buy_df
+                
+            col_s, col_b = st.columns(2)
+            sel_s = []
+            sel_b = []
+            
+            with col_s:
+                st.markdown("**🔵 매도 포지션**")
+                if not s_df.empty:
+                    s_disp = s_df[["id", "avg_price", "quantity"]].copy()
+                    s_disp.columns = ["id", "진입 가격", "수량"]
+                    s_disp.insert(0, "순번", range(1, len(s_disp) + 1))
+                    sel_s = _render_dash_grid(s_disp, f"dash_sell_{view_mode}", "#E0F2FE")
+                else:
+                    st.info("매도 포지션 없음")
+                    
+            with col_b:
+                st.markdown("**🔴 매수 포지션**")
+                if not b_df.empty:
+                    b_disp = b_df[["id", "avg_price", "quantity"]].copy()
+                    b_disp.columns = ["id", "진입 가격", "수량"]
+                    b_disp.insert(0, "순번", range(1, len(b_disp) + 1))
+                    sel_b = _render_dash_grid(b_disp, f"dash_buy_{view_mode}", "#FCE4EC")
+                else:
+                    st.info("매수 포지션 없음")
+                    
+            selected_pos = (sel_s or []) + (sel_b or [])
+            
+        # 선택된 항목이 있을 때만 취소 버튼 표시
+        if selected_pos:
+            st.write("")
+            if st.button(f"🗑️ 선택한 {len(selected_pos)}건 주문 취소", use_container_width=True, type="primary"):
+                ids_to_cancel = [int(p["id"]) for p in selected_pos if "id" in p]
+                try:
+                    res = requests.post(f"{API_URL}/order/cancel_list", json={"ids": ids_to_cancel}, timeout=5)
+                    if res.status_code == 200:
+                        st.session_state.dash_cancel_msg = f"✅ {len(ids_to_cancel)}건 주문 취소 처리 성공"
+                        
+                        # 더미 데이터 UI 테스트를 위해 취소된 ID 기록
+                        if "dummy_cancelled_ids" not in st.session_state:
+                            st.session_state.dummy_cancelled_ids = []
+                        st.session_state.dummy_cancelled_ids.extend(ids_to_cancel)
+                        st.rerun()
+                    else:
+                        st.error(f"❌ {len(ids_to_cancel)}건 주문 취소 처리 실패 (사유: HTTP {res.status_code} - {res.text})")
+                except Exception as e:
+                    st.error(f"❌ {len(ids_to_cancel)}건 주문 취소 처리 실패 (사유: 서버 응답 없음 또는 네트워크 에러 - {e})")
+                    
+        if st.session_state.get("dash_cancel_msg"):
+            st.success(st.session_state.dash_cancel_msg)
+            if st.button("확인", key="ok_dash_cancel"):
+                st.session_state.dash_cancel_msg = None
+                st.rerun()
     else:
         st.info("활성화된 포지션이 없습니다.")
 
 
 
-    pass
-    st.subheader("💸 거래 내역")
-    st.subheader("최근 체결 내역")
-    st.info("알고리즘 가동 시 실시간으로 기록됩니다.")
-    st.dataframe(pd.DataFrame(columns=["시간", "종류", "가격(원)", "수량", "상태"]), use_container_width=True)
+    st.write("") # 차트와 간격 띄우기
+    
+    st.subheader("💰 내 자산 및 수익 현황")
+    c1, c2, c3, c4 = st.columns(4)
+    is_connected = status_data.get("exchange_connected", False)
 
-    pass
-    st.subheader("🤖 시스템 상태")
-    st.subheader("엔진 구동 상태")
-    col_a, col_b = st.columns(2)
-    ex_cfg_disp = cfg.get(curr_ex, {})
-    with col_a:
-        st.write(f"**상태:** {'🟢 가동 중' if status_data.get('running', False) else '🔴 정지됨'}")
-        st.write(f"**거래소:** {curr_ex.upper()}")
-        st.write(f"**종목:** {current_sym(current_cfg)}")
-        st.write(f"**모드:** {mode_badge}")
-    with col_b:
-        st.write(f"**기준가:** {ex_cfg_disp.get('base_price', 0):,}")
-        st.write(f"**그리드 간격:** {ex_cfg_disp.get('grid_interval', '-')}")
-        st.write(f"**익절 간격:** {ex_cfg_disp.get('take_profit', '-')}")
-        st.write(f"**1회 주문 수량:** {ex_cfg_disp.get('order_quantity', '-')}")
+    with c1:
+        st.metric("총 자산 (예수금)", f"{status_data.get('balance', 0):,} 원",
+                  delta="연동 완료" if is_connected else "연동 실패/대기",
+                  delta_color="normal" if is_connected else "off")
+    with c2:
+        st.metric("누적 실현 수익", f"{status_data.get('total_profit', 0):,} 원", delta="0.00%")
+    with c3:
+        st.metric("금일 체결 횟수", f"{status_data.get('trade_count', 0)} 회")
+    with c4:
+        st.metric("활성 거래중 노드", f"{len(status_data.get('positions', []))} 개")
+
+# ── 신규 거래 내역 탭 ────────────────────────────────
+with tab_history:
+    st.subheader("💸 거래 내역")
+    st.info("알고리즘 가동 시 실시간으로 기록됩니다. (백엔드 연동 전 임시 레이아웃)")
+    import datetime
+    now = datetime.datetime.now()
+    if curr_ex == "kis" and curr_paper:
+        dummy_history = [
+            {"시간": (now - datetime.timedelta(minutes=45)).strftime("%Y-%m-%d %H:%M:%S"), "종류": "🔴 매수", "가격(원)": "83,500", "수량": "10", "상태": "✅ 체결"},
+            {"시간": (now - datetime.timedelta(minutes=30)).strftime("%Y-%m-%d %H:%M:%S"), "종류": "🔵 매도", "가격(원)": "85,500", "수량": "10", "상태": "✅ 체결"},
+            {"시간": (now - datetime.timedelta(minutes=25)).strftime("%Y-%m-%d %H:%M:%S"), "종류": "🔴 매수", "가격(원)": "82,500", "수량": "10", "상태": "✅ 체결"},
+            {"시간": (now - datetime.timedelta(minutes=15)).strftime("%Y-%m-%d %H:%M:%S"), "종류": "🔵 매도", "가격(원)": "84,500", "수량": "10", "상태": "✅ 체결"},
+            {"시간": (now - datetime.timedelta(minutes=2)).strftime("%Y-%m-%d %H:%M:%S"),  "종류": "🔴 매수", "가격(원)": "81,500", "수량": "10", "상태": "✅ 체결"},
+        ]
+        st.dataframe(pd.DataFrame(dummy_history), use_container_width=True, hide_index=True)
+    else:
+        st.dataframe(pd.DataFrame(columns=["시간", "종류", "가격(원)", "수량", "상태"]), use_container_width=True)
