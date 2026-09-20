@@ -16,7 +16,6 @@ st.markdown("""
     }
     /* 모바일 웹뷰(앱) 최적화: 불필요한 Streamlit 기본 헤더/푸터 및 여백 제거 */
     #MainMenu {visibility: hidden;}
-    header {visibility: hidden;}
     footer {visibility: hidden;}
     .block-container {
         padding-top: 1.5rem !important;
