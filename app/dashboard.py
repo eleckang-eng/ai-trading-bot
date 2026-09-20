@@ -246,6 +246,7 @@ with tab_settings:
     st.divider()
 
     # ── 매매 알고리즘 파라미터 ──────────────────────
+with tab_order:
     st.subheader("🎛️ 매매 알고리즘 파라미터 (그리드 설정)")
     cfg              = status_data.get("config", {}) if status_data else {}
     current_exchange = cfg.get("exchange", "bithumb")
@@ -604,6 +605,7 @@ with tab_dash:
 
 
     # ── 그리드 주문 프리뷰 ────────────────────────────────
+with tab_order:
     if st.session_state.get("show_grid_preview", False):
         s_list = st.session_state.get("grid_sell_list", [])
         b_list = st.session_state.get("grid_buy_list",  [])
