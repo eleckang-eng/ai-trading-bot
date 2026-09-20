@@ -1,0 +1,38 @@
+2026-09-20 23:38:50,276 - TraderLoop - INFO - TraderLoop start requested.
+2026-09-20 23:38:50,277 - TraderLoop - INFO - Trader Loop is now running...
+2026-09-20 23:38:50,278 - TraderLoop - INFO - 🔄 [자동 동기화] 잔고 및 거래소 미체결 내역 동기화 실행
+2026-09-20 23:38:50,336 - watchfiles.main - INFO - 5 changes detected
+2026-09-20 23:39:08,570 - TraderLoop - INFO - [실전투자] 수동 매도 API 접수: 1000.0개 @ 699원 지정가 / 응답: {'uuid': 'C0907000000292323884', 'side': 'ask', 'ord_type': 'limit', 'price': '699', 'state': 'wait', 'market': 'KRW-ONDO', 'created_at': '2026-09-20T23:39:08+09:00', 'volume': '1000', 'remaining_volume': '1000', 'reserved_fee': '0', 'remaining_fee': '0', 'paid_fee': '0', 'locked': '1000', 'executed_volume': '0', 'executed_funds': '0', 'trades_count': 0, 'stp_type': 'cancel_taker'}
+2026-09-20 23:41:05,143 - TraderLoop - INFO - [실전투자] 수동 매도 API 접수: 1000.0개 @ 649원 지정가 / 응답: {'uuid': 'C0907000000292324180', 'side': 'ask', 'ord_type': 'limit', 'price': '649', 'state': 'wait', 'market': 'KRW-ONDO', 'created_at': '2026-09-20T23:41:05+09:00', 'volume': '1000', 'remaining_volume': '1000', 'reserved_fee': '0', 'remaining_fee': '0', 'paid_fee': '0', 'locked': '1000', 'executed_volume': '0', 'executed_funds': '0', 'trades_count': 0, 'stp_type': 'cancel_taker'}
+2026-09-20 23:41:06,023 - TraderLoop - INFO - [실전투자] 수동 매도 API 접수: 1000.0개 @ 599원 지정가 / 응답: {'uuid': 'C0907000000292324192', 'side': 'ask', 'ord_type': 'limit', 'price': '599', 'state': 'wait', 'market': 'KRW-ONDO', 'created_at': '2026-09-20T23:41:05+09:00', 'volume': '1000', 'remaining_volume': '1000', 'reserved_fee': '0', 'remaining_fee': '0', 'paid_fee': '0', 'locked': '1000', 'executed_volume': '0', 'executed_funds': '0', 'trades_count': 0, 'stp_type': 'cancel_taker'}
+2026-09-20 23:41:06,923 - TraderLoop - INFO - [실전투자] 수동 매수 API 접수: 1000.0개 @ 501원 지정가 / 응답: {'uuid': 'C0907000000292324195', 'side': 'bid', 'ord_type': 'limit', 'price': '501', 'state': 'wait', 'market': 'KRW-ONDO', 'created_at': '2026-09-20T23:41:06+09:00', 'volume': '1000', 'remaining_volume': '1000', 'reserved_fee': '1252.5', 'remaining_fee': '1252.5', 'paid_fee': '0', 'locked': '502253.5', 'executed_volume': '0', 'executed_funds': '0', 'trades_count': 0, 'stp_type': 'cancel_taker'}
+2026-09-20 23:41:07,903 - TraderLoop - INFO - [실전투자] 수동 매수 API 접수: 1000.0개 @ 491원 지정가 / 응답: {'uuid': 'C0907000000292324199', 'side': 'bid', 'ord_type': 'limit', 'price': '491', 'state': 'wait', 'market': 'KRW-ONDO', 'created_at': '2026-09-20T23:41:07+09:00', 'volume': '1000', 'remaining_volume': '1000', 'reserved_fee': '1227.5', 'remaining_fee': '1227.5', 'paid_fee': '0', 'locked': '492228.5', 'executed_volume': '0', 'executed_funds': '0', 'trades_count': 0, 'stp_type': 'cancel_taker'}
+2026-09-20 23:41:07,914 - api_server - INFO - [BATCH] task=762f9ff6 완료: 4/4 성공
+2026-09-20 23:41:23,181 - BithumbAPI - INFO - Cancel Response: {"uuid":"C0907000000292323884","side":"ask","ord_type":"limit","price":"699","state":"wait","market":"KRW-ONDO","created_at":"2026-09-20T23:39:08+09:00","volume":"1000","remaining_volume":"1000","reserved_fee":"0","remaining_fee":"0","paid_fee":"0","locked":"1000","executed_volume":"0","executed_funds":"0","trades_count":0,"stp_type":"cancel_taker"}
+2026-09-20 23:42:41,022 - TraderLoop - INFO - [실전투자] 수동 매수 API 접수: 1.0개 @ 84,000원 지정가 / 응답: {'rt_cd': '7', 'msg_cd': 'APBK0919', 'msg1': '장운영일자가 주문일과 상이합니다'}
+2026-09-20 23:43:03,041 - TraderLoop - INFO - 🔄 [설정 갱신] kis 기준가가 실시간 현재가(83500)로 초기화되었습니다.
+2026-09-20 23:43:37,749 - TraderLoop - INFO - [실전투자] 수동 매도 API 접수: 10.0개 @ 85,900원 지정가 / 응답: {'rt_cd': '7', 'msg_cd': 'APBK0919', 'msg1': '장운영일자가 주문일과 상이합니다'}
+2026-09-20 23:43:38,659 - TraderLoop - INFO - [실전투자] 수동 매수 API 접수: 10.0개 @ 81,100원 지정가 / 응답: {'rt_cd': '7', 'msg_cd': 'APBK0919', 'msg1': '장운영일자가 주문일과 상이합니다'}
+2026-09-20 23:43:38,661 - api_server - INFO - [BATCH] task=2d322ba1 완료: 0/2 성공
+2026-09-21 00:08:20,037 - watchfiles.main - INFO - 1 change detected
+2026-09-21 00:08:20,301 - TraderLoop - INFO - TraderLoop stop requested.
+2026-09-21 00:09:00,998 - TraderLoop - INFO - TraderLoop start requested.
+2026-09-21 00:09:00,999 - TraderLoop - INFO - Trader Loop is now running...
+2026-09-21 00:09:01,000 - TraderLoop - INFO - 🔄 [자동 동기화] 잔고 및 거래소 미체결 내역 동기화 실행
+2026-09-21 00:09:01,072 - watchfiles.main - INFO - 5 changes detected
+2026-09-21 00:09:21,385 - BithumbAPI - INFO - Cancel Response: {"uuid":"C0907000000292324180","side":"ask","ord_type":"limit","price":"649","state":"wait","market":"KRW-ONDO","created_at":"2026-09-20T23:41:05+09:00","volume":"1000","remaining_volume":"1000","reserved_fee":"0","remaining_fee":"0","paid_fee":"0","locked":"1000","executed_volume":"0","executed_funds":"0","trades_count":0,"stp_type":"cancel_taker"}
+2026-09-21 00:09:34,711 - watchfiles.main - INFO - 1 change detected
+2026-09-21 00:09:34,898 - TraderLoop - INFO - TraderLoop stop requested.
+2026-09-21 00:10:24,695 - TraderLoop - INFO - TraderLoop start requested.
+2026-09-21 00:10:24,697 - TraderLoop - INFO - Trader Loop is now running...
+2026-09-21 00:10:24,697 - TraderLoop - INFO - 🔄 [자동 동기화] 잔고 및 거래소 미체결 내역 동기화 실행
+2026-09-21 00:10:24,778 - watchfiles.main - INFO - 5 changes detected
+2026-09-21 00:10:38,343 - BithumbAPI - INFO - Cancel Response: {"uuid":"C0907000000292324199","side":"bid","ord_type":"limit","price":"491","state":"wait","market":"KRW-ONDO","created_at":"2026-09-20T23:41:07+09:00","volume":"1000","remaining_volume":"1000","reserved_fee":"1227.5","remaining_fee":"1227.5","paid_fee":"0","locked":"492228.5","executed_volume":"0","executed_funds":"0","trades_count":0,"stp_type":"cancel_taker"}
+2026-09-21 00:11:46,470 - watchfiles.main - INFO - 1 change detected
+2026-09-21 00:11:46,620 - TraderLoop - INFO - TraderLoop stop requested.
+2026-09-21 00:12:16,388 - TraderLoop - INFO - TraderLoop start requested.
+2026-09-21 00:12:16,389 - TraderLoop - INFO - Trader Loop is now running...
+2026-09-21 00:12:16,390 - TraderLoop - INFO - 🔄 [자동 동기화] 잔고 및 거래소 미체결 내역 동기화 실행
+2026-09-21 00:12:16,483 - watchfiles.main - INFO - 5 changes detected
+2026-09-21 00:15:22,095 - watchfiles.main - INFO - 1 change detected
+2026-09-21 00:15:22,340 - TraderLoop - INFO - TraderLoop stop requested.

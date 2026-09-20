@@ -77,18 +77,73 @@ class BithumbClient(BaseExchange):
         # TODO: API 2.0 주문 로직 구현 필요
         pass
 
-    def cancel_order(self, order_id: tuple):
-        pass
+    def cancel_order(self, order_id: str, symbol: str = "ONDO"):
+        import hashlib
+        import urllib.parse
+        url = f"{self.base_url}/v1/order"
+        data = {"uuid": order_id}
+        query_string = urllib.parse.urlencode(data).encode('utf-8')
+        m = hashlib.sha512()
+        m.update(query_string)
+        query_hash = m.hexdigest()
+        headers = self._get_headers(query_hash)
+        res = requests.delete(url, params=data, headers=headers)
+        import logging
+        logging.getLogger("BithumbAPI").info(f"Cancel Response: {res.text}")
+        return res.json()
 
     def buy_limit_order(self, symbol: str, price: float, quantity: float):
-        url = f"{self.base_url}/trade/place"
-        import requests
-        return requests.post(url, data={"order_currency": symbol, "payment_currency": "KRW", "units": quantity, "price": price, "type": "bid"}).json()
+        import hashlib
+        import urllib.parse
+        url = f"{self.base_url}/v1/orders"
+        market = f"KRW-{symbol}" if not symbol.startswith("KRW-") else symbol
+        data = {
+            "market": market,
+            "side": "bid",
+            "volume": str(quantity),
+            "price": str(price),
+            "ord_type": "limit"
+        }
+        query_string = urllib.parse.urlencode(data).encode('utf-8')
+        m = hashlib.sha512()
+        m.update(query_string)
+        query_hash = m.hexdigest()
+        headers = self._get_headers(query_hash)
+        res = requests.post(url, json=data, headers=headers)
+        return res.json()
         
     def sell_limit_order(self, symbol: str, price: float, quantity: float):
-        url = f"{self.base_url}/trade/place"
-        import requests
-        return requests.post(url, data={"order_currency": symbol, "payment_currency": "KRW", "units": quantity, "price": price, "type": "ask"}).json()
+        import hashlib
+        import urllib.parse
+        url = f"{self.base_url}/v1/orders"
+        market = f"KRW-{symbol}" if not symbol.startswith("KRW-") else symbol
+        data = {
+            "market": market,
+            "side": "ask",
+            "volume": str(quantity),
+            "price": str(price),
+            "ord_type": "limit"
+        }
+        query_string = urllib.parse.urlencode(data).encode('utf-8')
+        m = hashlib.sha512()
+        m.update(query_string)
+        query_hash = m.hexdigest()
+        headers = self._get_headers(query_hash)
+        res = requests.post(url, json=data, headers=headers)
+        return res.json()
         
     def get_open_orders(self, symbol: str):
         return {"status": "0000", "data": []}
+
+    def get_order(self, order_id: str):
+        import hashlib
+        import urllib.parse
+        url = f"{self.base_url}/v1/order"
+        data = {"uuid": order_id}
+        query_string = urllib.parse.urlencode(data).encode('utf-8')
+        m = hashlib.sha512()
+        m.update(query_string)
+        query_hash = m.hexdigest()
+        headers = self._get_headers(query_hash)
+        res = requests.get(url, params=data, headers=headers)
+        return res.json()

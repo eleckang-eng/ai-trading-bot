@@ -1,5 +1,6 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import '../services/base_api_service.dart';
+import '../services/database.dart';
 
 class PositionsView extends StatefulWidget {
   final BaseApiService apiService;
@@ -10,74 +11,103 @@ class PositionsView extends StatefulWidget {
 }
 
 class _PositionsViewState extends State<PositionsView> {
-  List<dynamic> positions = [];
+  List<Map<String, dynamic>> sellPositions = [];
+  List<Map<String, dynamic>> buyPositions = [];
   bool isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _fetch();
+    _loadPositions();
   }
 
-  void _fetch() async {
+  Future<void> _loadPositions() async {
     setState(() => isLoading = true);
-    final res = await widget.apiService.getStatus();
+    // 모바일 단독 DB에서 가져오기 (종목 기호 005930 임시 고정)
+    final dbHelper = DatabaseHelper.instance;
+    final allPos = await dbHelper.getActivePositions("005930");
+    
     setState(() {
+      sellPositions = allPos.where((p) => p['side'] == 'sell').toList();
+      buyPositions = allPos.where((p) => p['side'] == 'buy').toList();
+      
+      // 가격 순 정렬 (매도는 높은 가격이 위로, 매수는 낮은 가격이 아래로 등 UI에 맞게 정렬)
+      sellPositions.sort((a, b) => (b['price'] as num).compareTo(a['price'] as num));
+      buyPositions.sort((a, b) => (b['price'] as num).compareTo(a['price'] as num));
       isLoading = false;
-      if (res['status'] == 'success') {
-        positions = res['positions'] ?? [];
-      }
     });
   }
 
-  void _cancelAll() async {
-    showDialog(
-      context: context, barrierDismissible: false,
-      builder: (ctx) => AlertDialog(content: Row(children: const [CircularProgressIndicator(), SizedBox(width: 16), Text("취소 중...")])),
+  Future<void> _cancelOrder(int id) async {
+    // 실제 환경에서는 API 호출 후 성공 시 DB 삭제
+    await DatabaseHelper.instance.deletePosition(id);
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('주문이 취소되었습니다.')));
+    _loadPositions();
+  }
+
+  Widget _buildPositionTable(String title, List<Map<String, dynamic>> positions, Color headerColor) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          color: headerColor,
+          child: Text("$title (${positions.length}건)", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        ),
+        if (positions.isEmpty)
+          const Padding(
+            padding: EdgeInsets.all(16.0),
+            child: Text("포지션 없음", textAlign: TextAlign.center),
+          )
+        else
+          ListView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: positions.length,
+            itemBuilder: (context, index) {
+              final pos = positions[index];
+              return Card(
+                child: ListTile(
+                  title: Text("진입가: ${pos['price']}원"),
+                  subtitle: Text("수량: ${pos['quantity']}주"),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.cancel, color: Colors.red),
+                    onPressed: () => _cancelOrder(pos['id']),
+                  ),
+                ),
+              );
+            },
+          ),
+      ],
     );
-    final res = await widget.apiService.cancelAllOrders();
-    Navigator.pop(context);
-    
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(res['status'] == 'success' ? '취소 완료' : '취소 실패: ${res["message"]}')));
-    _fetch();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    return isLoading
+      ? const Center(child: CircularProgressIndicator())
+      : SingleChildScrollView(
+          padding: const EdgeInsets.all(8.0),
+          child: Column(
             children: [
-              Text("거미줄 현황 (${positions.length}건)", style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-              ElevatedButton.icon(
-                onPressed: positions.isEmpty ? null : _cancelAll,
-                icon: const Icon(Icons.delete), label: const Text("일괄 취소"),
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text("호가창 현황 (단독 모드)", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  IconButton(icon: const Icon(Icons.refresh), onPressed: _loadPositions)
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: _buildPositionTable("🔵 매도 포지션", sellPositions, Colors.blue.shade100)),
+                  const SizedBox(width: 8),
+                  Expanded(child: _buildPositionTable("🔴 매수 포지션", buyPositions, Colors.pink.shade100)),
+                ],
               )
             ],
           ),
-        ),
-        Expanded(
-          child: isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : positions.isEmpty
-              ? const Center(child: Text("미체결 주문이 없습니다."))
-              : ListView.builder(
-                  itemCount: positions.length,
-                  itemBuilder: (ctx, idx) {
-                    final pos = positions[idx];
-                    return ListTile(
-                      leading: const CircleAvatar(child: Icon(Icons.show_chart)),
-                      title: Text("${pos['avg_price'] ?? 0} 원"),
-                      subtitle: Text("종목: ${pos['symbol']} | 수량: ${pos['quantity']}"),
-                    );
-                  },
-                ),
-        )
-      ],
-    );
+        );
   }
 }

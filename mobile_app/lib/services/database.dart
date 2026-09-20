@@ -1,67 +1,71 @@
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 
-class DatabaseService {
-  Database? _db;
+class DatabaseHelper {
+  static final DatabaseHelper instance = DatabaseHelper._init();
+  static Database? _database;
+
+  DatabaseHelper._init();
 
   Future<Database> get database async {
-    if (_db != null) return _db!;
-    _db = await _initDB();
-    return _db!;
+    if (_database != null) return _database!;
+    _database = await _initDB('positions.db');
+    return _database!;
   }
 
-  Future<Database> _initDB() async {
-    String dbPath = await getDatabasesPath();
-    String path = join(dbPath, 'trading_bot.db');
+  Future<Database> _initDB(String filePath) async {
+    final dbPath = await getDatabasesPath();
+    final path = join(dbPath, filePath);
 
-    return await openDatabase(
-      path,
-      version: 1,
-      onCreate: (db, version) async {
-        await db.execute('''
-          CREATE TABLE open_orders(
-            order_id TEXT PRIMARY KEY,
-            symbol TEXT,
-            side TEXT,
-            price INTEGER,
-            qty INTEGER,
-            status TEXT DEFAULT 'OPEN',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-          )
-        ''');
-      },
+    return await openDatabase(path, version: 1, onCreate: _createDB);
+  }
+
+  Future _createDB(Database db, int version) async {
+    await db.execute('''
+      CREATE TABLE positions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        symbol TEXT NOT NULL,
+        side TEXT NOT NULL,
+        quantity REAL NOT NULL,
+        price REAL NOT NULL,
+        status TEXT DEFAULT 'open',
+        order_id TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    ''');
+  }
+
+  Future<int> insertPosition(Map<String, dynamic> position) async {
+    final db = await instance.database;
+    return await db.insert('positions', position);
+  }
+
+  Future<List<Map<String, dynamic>>> getActivePositions(String symbol) async {
+    final db = await instance.database;
+    return await db.query(
+      'positions',
+      where: 'symbol = ? AND status = ?',
+      whereArgs: [symbol, 'open'],
+      orderBy: 'price DESC',
     );
   }
 
-  // 아직 활성화된(미체결) 주문 목록 가져오기
-  Future<List<Map<String, dynamic>>> getOpenOrders() async {
-    final db = await database;
-    return await db.query('open_orders', where: 'status = ?', whereArgs: ['OPEN']);
+  Future<int> updatePositionStatus(int id, String status) async {
+    final db = await instance.database;
+    return await db.update(
+      'positions',
+      {'status': status},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
   }
-
-  // 체결 완료 처리
-  Future<void> markOrderExecuted(String id) async {
-    final db = await database;
-    await db.update('open_orders', {'status': 'EXECUTED'}, where: 'order_id = ?', whereArgs: [id]);
-  }
-
-  // 취소/장마감 소멸 처리
-  Future<void> markOrderCancelled(String id) async {
-    final db = await database;
-    await db.update('open_orders', {'status': 'CANCELLED'}, where: 'order_id = ?', whereArgs: [id]);
-  }
-
-  // 신규 주문 DB 저장
-  Future<void> addOpenOrder(String id, String symbol, String side, int price, int qty) async {
-    final db = await database;
-    await db.insert('open_orders', {
-      'order_id': id,
-      'symbol': symbol,
-      'side': side,
-      'price': price,
-      'qty': qty,
-      'status': 'OPEN'
-    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  
+  Future<int> deletePosition(int id) async {
+    final db = await instance.database;
+    return await db.delete(
+      'positions',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
   }
 }
-

@@ -3,130 +3,315 @@ import sqlite3
 import os
 import logging
 from dotenv import load_dotenv
-from typing import List, Dict
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from exchanges.kis_api import KISClient
+from exchanges.bithumb_api import BithumbClient
 
-# 로그 설정
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+# Set up logging
+log_file_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'app.log')
+logging.basicConfig(
+    level=logging.INFO, 
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(log_file_path, encoding='utf-8'),
+        logging.StreamHandler()
+    ]
+)
 logger = logging.getLogger("TraderLoop")
 
 load_dotenv()
 
-def adjust_kis_tick(price: float, is_buy: bool) -> int:
-    """
-    한국투자증권(KIS) 특정 호가 단위(Tick)에 맞춰 가격을 반올림/보정하는 함수.
-    Ping-Pong 봇 특성상 지정가 체결을 빠르고 확실하게 가져가기 위해, 
-    매도 시에는 끝자리가 900(예: 83900), 매수 시에는 끝자리가 100(예: 80100)이 되도록
-    수학적으로 가장 가까운 틱 가격을 계산하여 반환합니다.
-    """
-    p_int = int(price)
-    base = (p_int // 1000) * 1000
-    if is_buy:
-        # 매수(BUY): 끝자리를 무조건 100으로 맞추어 체결 우선순위 및 그리드 효율을 높임
-        cand1 = base - 900 # (base - 1000 + 100)
-        cand2 = base + 100
-        cand3 = base + 1100
-        cands = [cand1, cand2, cand3]
-        return min(cands, key=lambda x: abs(p_int - x))
-    else:
-        # 매도(SELL): 끝자리를 무조건 900으로 맞추어 체결 우선순위 및 이익 실현을 최적화함
-        cand1 = base - 100 # (base - 1000 + 900)
-        cand2 = base + 900
-        cand3 = base + 1900
-        cands = [cand1, cand2, cand3]
-        return min(cands, key=lambda x: abs(p_int - x))
-
 class TraderLoop:
     def __init__(self):
         self.running = False
+        self.balances = {"kis": 0, "bithumb": 0}  # 거래소별 잔고 캐시
+        default_ex = os.getenv("DEFAULT_EXCHANGE", "kis")
+        default_mock = os.getenv("MOCK_MODE", "false").lower() in ("true", "1", "yes")
+        default_sym = "042660" if default_ex == "kis" else "ONDO"
         self.config = {
-            "symbol": "005930",
-            "exchange": "KIS", # KIS 또는 BITHUMB
-            "mode": "real", # 실전(real), 모의(mock), 백테스트(test)
-            "auto_sync_interval": 60, # 기본 1분마다 깨어나서 동기화(Low-Power Polling)
-            "grid_interval": 2000, 
-            "quantity": 10
+            "symbol": default_sym, 
+            "exchange": default_ex,
+            "mock_mode": default_mock,
+            "bithumb": {
+                "grid_interval": 10,
+                "take_profit": 10,
+                "order_quantity": 1000
+            },
+            "kis": {
+                "grid_interval": 2000,
+                "take_profit": 2000,
+                "order_quantity": 10
+            }
         }
-        self.state = {
-            "current_price": 0.0,
-            "api_fail_count": 0, # API 통신 연속 실패 횟수 누적
-            "critical_alert": None # 에러 임계치 초과 시 발령되는 긴급 알림 메시지
-        }
+        # DB setup
         self.db_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data')
         os.makedirs(self.db_dir, exist_ok=True)
         self.db_path = os.path.join(self.db_dir, 'positions.db')
         self._init_db()
+        
+        # KIS 실전 Setup
+        kis_url = os.getenv("KIS_URL_BASE", "")
+        kis_key = os.getenv("KIS_APP_KEY", "")
+        kis_sec = os.getenv("KIS_APP_SECRET", "")
+        kis_cano = os.getenv("KIS_CANO", "")
+        kis_acnt = os.getenv("KIS_ACNT_PRDT_CD", "01")
+        
+        # KIS 모의 Setup
+        kis_url_v = os.getenv("KIS_URL_BASE_MOCK_V", "https://openapivts.koreainvestment.com:29443")
+        kis_key_v = os.getenv("KIS_APP_KEY_MOCK_V", "")
+        kis_sec_v = os.getenv("KIS_APP_SECRET_MOCK_V", "")
+        kis_cano_v = os.getenv("KIS_CANO_V", "")
+        kis_acnt_v = os.getenv("KIS_ACNT_PRDT_CD_V", "01")
+        
+        # Bithumb Setup
+        self.bithumb_key = os.getenv("BITHUMB_API_KEY", "")
+        self.bithumb_secret = os.getenv("BITHUMB_SECRET_KEY", "")
+
         self.loop_task = None
+        
+        self.kis_real = None
+        self.kis_mock = None
+        
+        try:
+            if kis_key:
+                self.kis_real = KISClient(kis_url, kis_key, kis_sec, kis_cano, kis_acnt)
+        except Exception as e:
+            logger.error(f"Failed to initialize KIS Real: {e}")
+            
+        try:
+            if kis_key_v:
+                self.kis_mock = KISClient(kis_url_v, kis_key_v, kis_sec_v, kis_cano_v, kis_acnt_v)
+                
+            self.kis_sim = KISClient("http://127.0.0.1:8080", "mock", "mock", "mock", "01")
+            self.bithumb_sim = BithumbClient("mock", "mock", "http://127.0.0.1:8080")
+        except Exception as e:
+            logger.error(f"KIS/Bithumb init error: {e}")
+            
+        try:
+            if self.bithumb_key and self.bithumb_secret:
+                self.bithumb = BithumbClient(self.bithumb_key, self.bithumb_secret)
+            else:
+                self.bithumb = None
+        except Exception as e:
+            logger.error(f"Failed to initialize Bithumb Client: {e}")
+            self.bithumb = None
+
+    @property
+    def kis(self):
+        """mock_mode 여부에 따라 진짜/모의 클라이언트를 동적 반환"""
+        if self.config.get("paper_trading", False):
+            return self.kis_sim
+        return self.kis_mock if self.config.get("mock_mode", True) else self.kis_real
+
+    def _get_mode_key(self):
+        """현재 거래소/모드 조합 키 반환 (모드별 DB 분리용)"""
+        ex = self.config.get("exchange", "kis")
+        if self.config.get("paper_trading", False):
+            return f"{ex}_test"
+        elif self.config.get("mock_mode", True):
+            return f"{ex}_mock"
+        else:
+            return f"{ex}_real"
 
     def _init_db(self):
-        """SQLite 데이터베이스 초기화. 미체결 주문과 누적 포지션을 영속화하여 앱 종료 후에도 상태를 잃지 않도록 방어합니다."""
         with sqlite3.connect(self.db_path) as conn:
-            # 추적 중인 미체결 주문
             conn.execute('''
-                CREATE TABLE IF NOT EXISTS open_orders (
-                    order_id TEXT PRIMARY KEY,
+                CREATE TABLE IF NOT EXISTS grid_bullets (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
                     symbol TEXT,
-                    side TEXT,
-                    price REAL,
-                    quantity INTEGER,
-                    status TEXT
+                    quantity REAL,
+                    buy_price REAL,
+                    side TEXT DEFAULT 'buy',
+                    exchange_mode TEXT DEFAULT 'kis_mock'
                 )
             ''')
-            # 과거 누적 포지션 및 평단가 기록
             conn.execute('''
-                CREATE TABLE IF NOT EXISTS positions (
-                    symbol TEXT PRIMARY KEY,
-                    quantity INTEGER,
-                    avg_price REAL
+                CREATE TABLE IF NOT EXISTS config (
+                    key TEXT PRIMARY KEY,
+                    value TEXT
                 )
             ''')
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS trade_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    symbol TEXT,
+                    quantity REAL,
+                    price REAL,
+                    side TEXT,
+                    exchange_mode TEXT,
+                    filled_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    status TEXT DEFAULT 'filled'
+                )
+            ''')
+            # 기존 테이블 마이그레이션: side, exchange_mode, order_id 컬럼 추가
+            for col, default in [("side", "'buy'"), ("exchange_mode", "'kis_mock'"), ("order_id", "''")]:
+                try:
+                    conn.execute(f"ALTER TABLE grid_bullets ADD COLUMN {col} TEXT DEFAULT {default}")
+                except Exception:
+                    pass
             conn.commit()
 
-    def get_open_orders_db(self) -> List[Dict]:
-        """로컬 DB에서 현재 '미체결(open)' 상태로 마킹된 주문 목록을 조회합니다."""
+    def record_trade(self, symbol, quantity, price, side, exchange_mode, status="filled"):
+        """체결된 내역을 trade_history에 기록"""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute('''
+                INSERT INTO trade_history (symbol, quantity, price, side, exchange_mode, status)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (symbol, quantity, price, side, exchange_mode, status))
+            conn.commit()
+
+    def get_history(self, limit=50):
+        mode_key = self._get_mode_key()
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT order_id, symbol, side, price, quantity FROM open_orders WHERE status='open'")
+            cursor.execute('''
+                SELECT filled_at, side, price, quantity, status 
+                FROM trade_history 
+                WHERE exchange_mode = ? 
+                ORDER BY id DESC LIMIT ?
+            ''', (mode_key, limit))
             rows = cursor.fetchall()
-            return [{"order_id": r[0], "symbol": r[1], "side": r[2], "price": r[3], "quantity": r[4]} for r in rows]
+            return [{'filled_at': r[0], 'side': r[1], 'price': r[2], 'quantity': r[3], 'status': r[4]} for r in rows]
 
-    def add_open_order_db(self, order_id, symbol, side, price, quantity):
-        """거래소에 신규 주문을 넣은 직후 로컬 DB에 'open' 상태로 안전하게 기록합니다."""
+    def clear_history(self):
+        """현재 모드의 거래내역 영구 삭제"""
+        mode_key = self._get_mode_key()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute('DELETE FROM trade_history WHERE exchange_mode = ?', (mode_key,))
+            conn.commit()
+        return {"status": "success", "message": f"{mode_key} 거래 내역이 초기화되었습니다."}
+
+    def get_positions(self):
+        mode_key = self._get_mode_key()
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+
+            import json
+            cursor.execute("SELECT key, value FROM config")
+            for row in cursor.fetchall():
+                try:
+                    self.config[row[0]] = json.loads(row[1])
+                except:
+                    self.config[row[0]] = row[1]
+            cursor.execute(
+                "SELECT id, symbol, quantity, buy_price, side, order_id FROM grid_bullets WHERE exchange_mode = ?",
+                (mode_key,)
+            )
+            rows = cursor.fetchall()
+            return [{"id": r[0], "symbol": r[1], "quantity": r[2], "avg_price": r[3], "side": r[4] or "buy", "order_id": r[5] or ""} for r in rows]
+
+    def save_position(self, symbol, quantity, buy_price, side="buy", order_id=""):
+        mode_key = self._get_mode_key()
         with sqlite3.connect(self.db_path) as conn:
             conn.execute('''
-                INSERT INTO open_orders (order_id, symbol, side, price, quantity, status)
-                VALUES (?, ?, ?, ?, ?, 'open')
-            ''', (order_id, symbol, side, price, quantity))
+                INSERT INTO grid_bullets (symbol, quantity, buy_price, side, exchange_mode, order_id)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (symbol, quantity, buy_price, side, mode_key, order_id))
             conn.commit()
 
-    def mark_order_executed_db(self, order_id):
-        """거래소에서 해당 주문이 완전 체결되었음을 확인(Reconciliation)했을 때 상태를 업데이트합니다."""
+    def _cancel_order_via_api(self, exchange_mode, order_id, symbol):
+        if not order_id: return True # 테스트용 데이터거나 uuid 없는 경우 그냥 지움
+        exchange = exchange_mode.split("_")[0]
+        try:
+            if exchange == "kis" and self.kis:
+                res = self.kis.cancel_order(order_id, symbol)
+                if isinstance(res, dict) and res.get("rt_cd") != "0":
+                    raise Exception(f"KIS Cancel Error: {res}")
+            elif exchange == "bithumb" and self.bithumb:
+                res = self.bithumb.cancel_order(order_id, symbol)
+                if isinstance(res, dict) and "uuid" not in res:
+                    # 빗썸 취소 실패 시 에러
+                    if res.get("error"):
+                        raise Exception(f"Bithumb Cancel Error: {res}")
+        except Exception as e:
+            logger.error(f"API Cancel Failed for {order_id}: {e}")
+            raise e
+        return True
+
+    def delete_position(self, position_id, cancel_api=True):
         with sqlite3.connect(self.db_path) as conn:
-            conn.execute("UPDATE open_orders SET status='executed' WHERE order_id=?", (order_id,))
+            cursor = conn.cursor()
+            cursor.execute('SELECT exchange_mode, order_id, symbol, quantity, buy_price, side FROM grid_bullets WHERE id = ?', (position_id,))
+            row = cursor.fetchone()
+            if row:
+                ex_mode, order_id, symbol, qty, price, side = row
+                if cancel_api:
+                    self._cancel_order_via_api(ex_mode, order_id, symbol)
+                    # 수동으로 취소 요청(cancel_api=True)을 해서 성공한 경우에만 히스토리에 '취소' 기록
+                    self.record_trade(symbol, qty, price, side, ex_mode, "canceled")
+            conn.execute('DELETE FROM grid_bullets WHERE id = ?', (position_id,))
             conn.commit()
 
-    def mark_order_cancelled_db(self, order_id):
-        """
-        주문 만료 방어 로직:
-        장 마감(15:30)으로 인해 거래소에서 자동 취소되었거나 사용자가 HTS에서 임의로 취소하여
-        미체결에도 없고 체결 내역에도 없는 증발한 주문을 'cancelled'로 처리하여 Ping-Pong 오작동을 막습니다.
-        """
+    def delete_all_positions(self):
+        """현재 모드의 포지션 일괄 취소 및 삭제"""
+        mode_key = self._get_mode_key()
         with sqlite3.connect(self.db_path) as conn:
-            conn.execute("UPDATE open_orders SET status='cancelled' WHERE order_id=?", (order_id,))
+            cursor = conn.cursor()
+            cursor.execute('SELECT order_id, symbol, quantity, buy_price, side FROM grid_bullets WHERE exchange_mode = ?', (mode_key,))
+            rows = cursor.fetchall()
+            for r in rows:
+                try:
+                    self._cancel_order_via_api(mode_key, r[0], r[1])
+                    self.record_trade(r[1], r[2], r[3], r[4], mode_key, "canceled")
+                except Exception as e:
+                    logger.error(f"일괄 취소 실패 (ODNO: {r[0]}): {e}")
+                    pass # 일괄 취소는 에러 나도 계속 진행
+            conn.execute('DELETE FROM grid_bullets WHERE exchange_mode = ?', (mode_key,))
             conn.commit()
+
+
+    def update_balance(self):
+        exchange = self.config.get("exchange", "kis")
+        self.balances[exchange] = 0  # 초기화
+        success = False
+        
+        if exchange == "kis" and self.kis:
+            try:
+                bal_data = self.kis.get_balance()
+                if isinstance(bal_data, dict) and bal_data.get('rt_cd') == '0':
+                    self.balances["kis"] = int(bal_data['output2'][0]['dnca_tot_amt'])
+                    success = True
+                else:
+                    logger.error(f"KIS Balance Error: {bal_data}")
+            except Exception as e:
+                logger.error(f"KIS Balance exception: {e}")
+                
+        elif exchange == "bithumb" and self.bithumb:
+            try:
+                bal_data = self.bithumb.get_balance()
+                if bal_data:
+                    self.balances["bithumb"] = int(bal_data[2])
+                    success = True
+            except Exception as e:
+                logger.error(f"Bithumb Balance fetch error: {e}")
+                
+        return success
 
     def get_status(self):
-        """FastAPI 백엔드를 통해 현재 봇의 상태(설정, 진행 여부, 에러 알림 등)를 외부로 반환합니다."""
+        # UI 조회 속도를 위해 네트워크 통신(update_balance)을 빼고, 메모리에 캐싱된 값만 즉시 반환
+        current_exchange = self.config.get("exchange", "kis")
+        is_connected = False
+        if current_exchange == "kis":
+            is_connected = self.kis is not None
+        elif current_exchange == "bithumb":
+            is_connected = self.bithumb is not None
+        bal = self.balances.get(current_exchange, 0)
+
         return {
             "running": self.running,
             "config": self.config,
-            "state": self.state
+            "balance": bal,
+            "positions": self.get_positions(),
+            "exchange_connected": is_connected
         }
 
     def start(self):
         if not self.running:
             self.running = True
+            # asyncio.create_task is used when running within an existing event loop (like FastAPI's)
             self.loop_task = asyncio.create_task(self.run_loop())
-            logger.info("TraderLoop started in Low-Power Polling mode.")
+            logger.info("TraderLoop start requested.")
         return self.get_status()
 
     def stop(self):
@@ -141,175 +326,298 @@ class TraderLoop:
                 self.config[k].update(v)
             else:
                 self.config[k] = v
+        
+        import sqlite3, json
+        with sqlite3.connect(self.db_path) as conn:
+            for k, v in self.config.items():
+                val_str = json.dumps(v)
+                conn.execute("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", (k, val_str))
+                
         return self.config
         
-    async def fetch_exchange_data(self):
-        """
-        거래소 통신(가격, 미체결, 체결내역 동시 조회)
-        단일 실패 시 시스템을 멈추지 않고, Exponential Backoff(지수 백오프: 1초, 2초, 4초 대기) 기법을 적용하여
-        네트워크 일시 단절이나 500 내부 서버 오류를 스스로 극복(Self-healing)하도록 설계되었습니다.
-        """
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                logger.info("Fetching current price, open orders, and execution history from exchange...")
-                # TODO: 실제 KIS/Bithumb API 연동 코드가 이곳에 들어갑니다.
-                return {
-                    "current_price": 80000,
-                    "exchange_open_orders": [], # 현재 거래소에 걸려있는 미체결 주문 ID 목록
-                    "execution_history": [] # 당일 체결이 완료된 주문 ID 목록
-                }
-            except Exception as e:
-                wait_time = 2 ** attempt # 1초, 2초, 4초 점진적 대기
-                logger.warning(f"fetch_exchange_data API call failed: {e}. Retrying in {wait_time}s... ({attempt+1}/{max_retries})")
-                await asyncio.sleep(wait_time)
-        raise Exception("Fetch exchange data failed after max retries")
-        
-    async def place_order(self, symbol, side, price, quantity):
-        """
-        지정가 주문 접수.
-        마찬가지로 지수 백오프 방어 로직을 두어, 일시적인 Rate Limit이나 네트워크 타임아웃 발생 시
-        안전하게 잠시 대기했다가 다시 찔러보도록 유도합니다.
-        """
-        import uuid
-        order_id = str(uuid.uuid4())
-        
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                logger.info(f"Placing {side} order for {symbol} at {price} x {quantity}. OrderID: {order_id}")
-                # TODO: 실제 API 접수 호출 부
-                
-                # 접수 완료 시 안전하게 DB에 기록
-                self.add_open_order_db(order_id, symbol, side, price, quantity)
-                return
-            except Exception as e:
-                wait_time = 2 ** attempt
-                logger.warning(f"place_order API call failed: {e}. Retrying in {wait_time}s... ({attempt+1}/{max_retries})")
-                await asyncio.sleep(wait_time)
-        raise Exception("Order placement failed after max retries")
+    def manual_order(self, side, quantity, price=None):
+        """수동 매수/매도 주문 (price가 None이면 시장가)"""
+        order_type = "매수" if side == "buy" else "매도"
+        price_str  = f"{price:,.0f}원 지정가" if price else "시장가"
+        symbol     = self.config.get("symbol",   "042660")
+        exchange   = self.config.get("exchange", "kis")
 
-    def _evaluate_algorithm_rules(self):
-        """
-        UI 표시 용도가 아닌, 봇 자체 알고리즘 연산을 위한 함수입니다.
-        캐싱된 self.state['current_price']를 이용해 주가가 그리드를 너무 멀리 이탈했는지 검사하거나,
-        상황에 맞게 새로운 계단형 주문을 동적으로 생성(Dynamic Grid Expansion)하는 로직이 여기에 위치합니다.
-        """
-        current_price = self.state.get("current_price", 0)
-        if current_price == 0:
-            return
+        mode_str = "모의투자" if self.config.get("mock_mode", True) else "실전투자"
+
+        try:
+            api_res = None
+            if exchange == "kis" and self.kis:
+                order_price = int(price) if price else 0
+                order_qty   = int(quantity)
+                if side == "buy":
+                    api_res = self.kis.buy_limit(symbol, order_price, order_qty)
+                else:
+                    api_res = self.kis.sell_limit(symbol, order_price, order_qty)
+
+            elif exchange == "bithumb" and self.bithumb:
+                order_price = float(price) if price else 0
+                order_qty   = float(quantity)
+                if side == "buy":
+                    api_res = self.bithumb.buy_limit_order(symbol, order_price, order_qty)
+                else:
+                    api_res = self.bithumb.sell_limit_order(symbol, order_price, order_qty)
+            else:
+                return {"status": "error", "message": f"{exchange} 거래소 연결이 되어있지 않습니다."}
+
+            logger.info(f"[{mode_str}] 수동 {order_type} API 접수: {quantity}개 @ {price_str} / 응답: {api_res}")
+
+            is_success = False
+            msg = str(api_res)
+            order_id = ""
+            if exchange == "kis":
+                if isinstance(api_res, dict) and api_res.get("rt_cd") == "0":
+                    is_success = True
+                    msg = api_res.get("msg1", "성공")
+                    order_id = api_res.get("output", {}).get("ODNO", "")
+            elif exchange == "bithumb":
+                if isinstance(api_res, dict) and ("uuid" in api_res or api_res.get("status") == "0000"):
+                    is_success = True
+                    msg = "성공"
+                    order_id = api_res.get("uuid", "")
+
+            if is_success:
+                self.save_position(symbol, quantity, price or 0, side=side, order_id=order_id)  # 매수/매도 모두 DB 기록
+                return {"status": "success", "message": f"{order_type} 주문 체결 접수 성공: {msg}"}
+            else:
+                return {"status": "error", "message": f"주문 실패: {msg}"}
+                
+        except Exception as e:
+            logger.error(f"Manual Order Error: {e}")
+            return {"status": "error", "message": f"주문 실행 중 오류: {e}"}
+
+    def cancel_all_orders(self):
+        """현재 모드의 미체결 주문 일괄 취소 및 DB 초기화"""
+        mode_key = self._get_mode_key()
+        self.delete_all_positions()
+        logger.info(f"[{mode_key}] 포지션 및 미체결 주문 일괄 취소 (DB 초기화)")
+        return {"status": "success", "message": f"미체결 주문 및 포지션이 초기화되었습니다. ({mode_key})"}
+
+    def sync_orders(self):
+        """실제 거래소의 미체결 내역 및 체결 내역을 이중 조회하여 DB와 동기화합니다."""
+        mode_key = self._get_mode_key()
+        
+        # 테스트 모드는 시뮬레이터(run_loop)가 이미 처리하므로 스킵
+        if self.config.get("paper_trading", False):
+            return {"status": "success", "message": "테스트 모드는 내부 시뮬레이터로 자동 동기화됩니다."}
             
-        # 예시: 현재가가 특정 하단 밴드를 이탈하면 추가 물타기 그리드를 배포하는 식의 확장 로직
-        # if current_price < lower_bound:
-        #    spawn_new_grid(...)
-        logger.debug(f"Algorithm rules checked for price: {current_price}")
+        exchange = self.config.get("exchange", "kis")
+        try:
+            if exchange == "kis" and self.kis:
+                import datetime
+                today = datetime.datetime.now().strftime("%Y%M%d")
+                
+                # 1. 미체결 주문 조회 (현재 살아있는 주문)
+                open_res = self.kis.get_open_orders()
+                # 2. 당일 체결 내역 조회 (이미 체결된 주문)
+                # 실제 API에서 11월은 %m 이어야 하므로 포맷 수정: %Y%m%d
+                today = datetime.datetime.now().strftime("%Y%m%d")
+                filled_res = self.kis.get_daily_orders(today, today)
+                
+                if open_res.get("rt_cd") == "0" and filled_res.get("rt_cd") == "0":
+                    open_list = open_res.get("output", [])
+                    filled_list = filled_res.get("output1", []) if "output1" in filled_res else filled_res.get("output", [])
+                    
+                    # 가격(p_price) 의존 탈피: 정확한 주문번호(odno) 기반으로 수동 주문과 100% 분리
+                    open_odnos = {str(o.get("odno", "")).strip() for o in open_list}
+                    filled_odnos = {str(o.get("odno", "")).strip() for o in filled_list}
+                    filled_odnos.update({str(o.get("orgn_odno", "")).strip() for o in filled_list})
+                    
+                    db_positions = self.get_positions()
+                    removed_count = 0
+                    
+                    # 빗썸과 동일하게 매수/매도 분리 후 현재가 기준 정렬
+                    buys = sorted([p for p in db_positions if p['side'] == 'buy'], key=lambda x: float(x['avg_price']), reverse=True)
+                    sells = sorted([p for p in db_positions if p['side'] == 'sell'], key=lambda x: float(x['avg_price']))
+
+                    def _smart_sync_kis(sorted_pos, max_check=2):
+                        nonlocal removed_count
+                        unfilled_checked = 0
+                        for pos in sorted_pos:
+                            if unfilled_checked >= max_check:
+                                break
+                                
+                            order_id = str(pos.get('order_id', "")).strip()
+                            if not order_id:
+                                continue
+                                
+                            # 미체결 리스트에 살아있는지 단건(주문번호)으로 확인
+                            if order_id in open_odnos:
+                                unfilled_checked += 1  # 아직 안 팔림 (wait)
+                            else:
+                                # 미체결에 없다면 처리(체결/취소)된 상태이므로 DB에서 정리하고 다음 호가로 확장
+                                if order_id in filled_odnos:
+                                    logger.info(f"[한투 동기화] 체결 확인됨 (ODNO: {order_id}) -> DB 이동")
+                                    self.record_trade(pos['symbol'], pos['quantity'], pos['avg_price'], pos['side'], mode_key, "filled")
+                                    self.delete_position(pos['id'], cancel_api=False)
+                                    removed_count += 1
+                                else:
+                                    logger.info(f"[한투 동기화] 취소 확인됨 (ODNO: {order_id}) -> DB 이동")
+                                    self.record_trade(pos['symbol'], pos['quantity'], pos['avg_price'], pos['side'], mode_key, "canceled")
+                                    self.delete_position(pos['id'], cancel_api=False)
+                                    removed_count += 1
+
+                    # 매수 상위 2건, 매도 최하위 2건씩 탐색 시작 (체결 시 자동 확장)
+                    _smart_sync_kis(buys, 2)
+                    _smart_sync_kis(sells, 2)
+                                
+                    return {"status": "success", "message": f"한투 스마트 동기화 완료 (체결/취소 {removed_count}건 업데이트)"}
+                else:
+                    return {"status": "error", "message": f"거래소 조회 실패: {open_res.get('msg1')}"}
+
+            elif exchange == "bithumb" and self.bithumb:
+                db_positions = self.get_positions()
+                removed_count = 0
+                
+                # 매수/매도 분리 후 현재가에 가장 가까운 순서로 정렬
+                # 매수(buy)는 비쌀수록 현재가에 가까움 (내림차순)
+                buys = sorted([p for p in db_positions if p['side'] == 'buy'], key=lambda x: float(x['avg_price']), reverse=True)
+                # 매도(sell)는 쌀수록 현재가에 가까움 (오름차순)
+                sells = sorted([p for p in db_positions if p['side'] == 'sell'], key=lambda x: float(x['avg_price']))
+
+                def _smart_sync(sorted_pos, max_check=2):
+                    nonlocal removed_count
+                    unfilled_checked = 0
+                    for pos in sorted_pos:
+                        if unfilled_checked >= max_check:
+                            break
+                            
+                        order_id = pos.get('order_id')
+                        if not order_id:
+                            continue
+                            
+                        try:
+                            res = self.bithumb.get_order(order_id)
+                            state = res.get('state')
+                            
+                            if state == 'done':
+                                logger.info(f"[빗썸 동기화] 체결 확인됨 (uuid: {order_id}) -> DB 이동")
+                                self.record_trade(pos['symbol'], pos['quantity'], pos['avg_price'], pos['side'], mode_key, "filled")
+                                self.delete_position(pos['id'], cancel_api=False)
+                                removed_count += 1
+                                # 체결된 경우 unfilled_checked 카운트를 올리지 않음 -> 자연스럽게 다음 호가(추가 1건)를 더 조회하게 됨!
+                            elif state == 'cancel':
+                                logger.info(f"[빗썸 동기화] 취소 확인됨 (uuid: {order_id}) -> DB 이동")
+                                self.record_trade(pos['symbol'], pos['quantity'], pos['avg_price'], pos['side'], mode_key, "canceled")
+                                self.delete_position(pos['id'], cancel_api=False)
+                                removed_count += 1
+                                # 취소된 경우도 카운트를 올리지 않아 다음 호가를 탐색함
+                            else:
+                                # wait 등 아직 체결되지 않은 주문을 확인했을 때만 카운트 증가
+                                unfilled_checked += 1
+                        except Exception as e:
+                            logger.error(f"[빗썸 동기화] 개별 조회 에러 {order_id}: {e}")
+                            # 에러 시 무한 루프나 과다 요청을 막기 위해 체크 카운트 증가
+                            unfilled_checked += 1
+                            
+                # 매수 상위 2건, 매도 최하위 2건씩 탐색 시작
+                _smart_sync(buys, 2)
+                _smart_sync(sells, 2)
+                        
+                return {"status": "success", "message": f"빗썸 스마트 동기화 완료 (체결/취소 {removed_count}건 업데이트)"}
+
+        except Exception as e:
+            return {"status": "error", "message": f"동기화 중 오류 발생: {str(e)}"}
+            
+        return {"status": "success", "message": "해당 모드는 아직 동기화가 구현되지 않았습니다."}
 
     async def run_loop(self):
-        """
-        메인 코어 루프 (Low-Power Polling Grid Bot)
-        무한 루프에 의한 배터리 낭비(Busy-waiting)를 없애기 위해 1회의 완벽한 동기화(Sync) 사이클 후
-        지정된 시간(기본 1분) 동안 Deep Sleep 모드에 들어가는 아키텍처입니다.
-        """
-        logger.info("Low-Power Polling Grid Bot is active.")
-        from datetime import datetime, timezone, timedelta
-        kst_tz = timezone(timedelta(hours=9))
+        logger.info("Trader Loop is now running...")
         
+        last_sync_time = 0  # 초기값을 0으로 두어 시작 직후 즉시 동기화 실행되도록 함
+
         while self.running:
             try:
-                # [운영시간 방어] 한국투자증권(KIS)은 정규장 시간에만 움직여야 하므로 불필요한 API 낭비를 막습니다.
-                exchange = self.config.get("exchange", "KIS").upper()
-                if exchange == "KIS":
-                    now_kst = datetime.now(kst_tz)
-                    # 08:00 AM ~ 20:00 PM 사이가 아닐 경우 API 호출을 전면 생략하고 동면합니다.
-                    if not (8 <= now_kst.hour < 20):
-                        logger.info("Outside KIS operating hours (08:00~20:00 KST). Skipping sync and sleeping.")
-                        interval = self.config.get("auto_sync_interval", 60)
-                        for _ in range(interval):
-                            if not self.running:
-                                break
-                            await asyncio.sleep(1)
-                        continue
+                import time
+                current_time = time.time()
                 
-                # 1. WAKE UP & SYNC (기상 및 거래소 동기화)
-                logger.info("--- Starting Sync Cycle ---")
+                # 설정된 주기(기본 30분)마다 잔고 및 서버 미체결 내역 자동 동기화
+                sync_interval_mins = int(self.config.get("auto_sync_interval", 30))
+                sync_interval_secs = sync_interval_mins * 60
                 
-                # 거래소에서 모든 정보(현재가, 미체결, 체결)를 한 번에 긁어옵니다.
-                ex_data = await self.fetch_exchange_data()
-                
-                # 정상 통신 성공 시 기존에 쌓였던 에러 카운터와 긴급 알림을 모두 초기화(Self-healing)합니다.
-                self.state['api_fail_count'] = 0
-                self.state['critical_alert'] = None
-                
-                self.state["current_price"] = ex_data.get("current_price", 0.0)
-                exchange_open_orders = set(ex_data["exchange_open_orders"])
-                execution_history = set(ex_data["execution_history"])
-                
-                # 알고리즘 의사결정 호출
-                logger.info(f"Current Price updated to: {self.state['current_price']}. Evaluating algorithm rules...")
-                self._evaluate_algorithm_rules()
-                
-                # 로컬 DB에 기록되어 있는 우리의 미체결 주문 목록을 가져옵니다.
-                local_open_orders = self.get_open_orders_db()
-                
-                # 2. RECONCILIATION (체결 교차 검증)
-                # 로컬에는 '미체결'로 떠있는데, 거래소 데이터와 대조해봅니다.
-                for order in local_open_orders:
-                    order_id = order["order_id"]
-                    
-                    # 1차 검증: 거래소 미체결 목록에서 해당 주문이 감쪽같이 사라졌는가?
-                    if order_id not in exchange_open_orders:
-                        # 2차 검증: 취소된 게 아니라 당일 체결 내역(Execution History)에 정상적으로 존재하는가?
-                        if order_id in execution_history: 
-                            logger.info(f"Execution Confirmed for Order {order_id} ({order['side']} at {order['price']})")
-                            self.mark_order_executed_db(order_id)
-                            
-                            # 3. PING-PONG LOGIC (그물망 타격 대응)
-                            # 체결이 확인되었으므로, 해당 체결가를 기준으로 grid_interval * 2 만큼 떨어진 곳에 반대 포지션을 깝니다.
-                            grid_interval = self.config.get("grid_interval", 2000)
-                            exchange = self.config.get("exchange", "KIS")
-                            
-                            if order["side"] == "BUY":
-                                target_price = order["price"] + (grid_interval * 2)
-                                if exchange == "KIS":
-                                    target_price = adjust_kis_tick(target_price, is_buy=False)
-                                await self.place_order(order["symbol"], "SELL", target_price, order["quantity"])
-                                # [Rate Limit 방어] 다수 주문이 동시 체결되어 연달아 핑퐁이 나갈 때, KIS 초당 제한을 피하기 위해 1.0초 지연을 줍니다.
-                                await asyncio.sleep(1.0) 
-                                
-                            elif order["side"] == "SELL":
-                                target_price = order["price"] - (grid_interval * 2)
-                                if exchange == "KIS":
-                                    target_price = adjust_kis_tick(target_price, is_buy=True)
-                                await self.place_order(order["symbol"], "BUY", target_price, order["quantity"])
-                                # [Rate Limit 방어] 다수 주문 접수 지연
-                                await asyncio.sleep(1.0) 
-                        else:
-                            # 증발 현상 방어 (장 마감 만료 또는 유저 임의 취소)
-                            # 미체결에도 없고 체결 내역에도 없으므로, 허위 핑퐁을 방지하기 위해 과감히 DB에서 'cancelled' 처리합니다.
-                            logger.warning(f"Order {order_id} not found in open orders or execution history. Marking as cancelled.")
-                            self.mark_order_cancelled_db(order_id)
+                if current_time - last_sync_time >= sync_interval_secs:
+                    logger.info("🔄 [자동 동기화] 잔고 및 거래소 미체결 내역 동기화 실행")
+                    # 잔고 동기화 (느린 API 호출)
+                    self.update_balance()
+                    # 미체결 주문 동기화 (느린 API 호출)
+                    self.sync_orders()
+                    last_sync_time = current_time
 
-                logger.info("--- Sync Cycle Completed ---")
+                exchange = self.config.get("exchange", "kis")
+                symbol = self.config.get("symbol", "042660")
+                mock_mode = self.config.get("mock_mode", True)
                 
+                ex_cfg = self.config.get(exchange, {})
+                grid_interval = ex_cfg.get("grid_interval", 2000 if exchange == "kis" else 10)
+                take_profit = ex_cfg.get("take_profit", 2000 if exchange == "kis" else 10)
+                order_quantity = ex_cfg.get("order_quantity", 10 if exchange == "kis" else 1000)
+                
+                # 1. Fetch Price
+                current_price = 0
+                if exchange == "kis" and self.kis:
+                    price_res = self.kis.get_current_price(symbol)
+                    if isinstance(price_res, dict):
+                        if "output" in price_res and isinstance(price_res["output"], dict):
+                            current_price = float(price_res["output"].get("stck_prpr", 0))
+                        else:
+                            logger.warning(f"KIS Price Response Error: {price_res.get('msg1', price_res)}")
+                            current_price = 0
+                    else:
+                        try:
+                            current_price = float(price_res)
+                        except (ValueError, TypeError):
+                            current_price = 0
+                elif exchange == "bithumb" and self.bithumb:
+                    try:
+                        current_price = float(self.bithumb.get_current_price(symbol))
+                    except (ValueError, TypeError):
+                        current_price = 0
+                else:
+                    logger.warning(f"Exchange {exchange} not ready.")
+                    await asyncio.sleep(3)
+                    continue
+                    
+                if current_price <= 0:
+                    await asyncio.sleep(3)
+                    continue
+                    
+                # 1.5. 서버 기동 시 등 기준가가 0이면 현재가로 즉시 초기화
+                if not ex_cfg.get("base_price") or ex_cfg.get("base_price") == 0:
+                    self.update_config({exchange: {"base_price": int(current_price)}})
+                    logger.info(f"🔄 [설정 갱신] {exchange} 기준가가 실시간 현재가({int(current_price)})로 초기화되었습니다.")
+
+                # 2. Get Open Positions (Bullets)
+                positions = self.get_positions()
+                symbol_positions = [p for p in positions if p['symbol'] == symbol]
+                # 3. Trade Logic (그리드 주문 체결 감지 및 시뮬레이션)
+                for pos in symbol_positions:
+                    p_id = pos['id']
+                    p_price = pos['avg_price']
+                    p_side = pos['side']
+                    p_qty = pos['quantity']
+                    
+                    # 매도 주문: 현재가가 매도 지정가보다 높거나 같아지면 체결
+                    if p_side == "sell" and current_price >= p_price:
+                        logger.info(f"[체결 감지] 🔵 매도 그리드 도달: {p_price}원 (현재가 {current_price})")
+                        self.record_trade(symbol, p_qty, p_price, p_side, self._get_mode_key(), "filled")
+                        self.delete_position(p_id)
+                        
+                    # 매수 주문: 현재가가 매수 지정가보다 낮거나 같아지면 체결
+                    elif p_side == "buy" and current_price <= p_price:
+                        logger.info(f"[체결 감지] 🔴 매수 그리드 도달: {p_price}원 (현재가 {current_price})")
+                        self.record_trade(symbol, p_qty, p_price, p_side, self._get_mode_key(), "filled")
+                        self.delete_position(p_id)
+
+                await asyncio.sleep(3) # 3초마다 감시
             except Exception as e:
-                # [긴급 정지 방어] 통신 실패 등 에러 발생 시 카운트를 누적하고 5회 이상(약 5분 불능) 시 크리티컬 에러를 발포합니다.
-                logger.error(f"Error during Sync Cycle: {e}")
-                self.state['api_fail_count'] += 1
-                if self.state['api_fail_count'] >= 5:
-                    self.state['critical_alert'] = "API 연속 5회 통신 실패. 긴급 점검 요망"
-                    logger.critical(self.state['critical_alert'])
-                
-            # 4. DEEP SLEEP (깊은 수면)
-            # 설정된 interval(예: 60초) 동안 봇은 아무런 네트워크 활동 없이 대기하여 모바일 리소스를 아낍니다.
-            # 다만 긴급 정지(stop) 요청 시 1초 단위로 빠르게 반응할 수 있도록 루프를 쪼개서 대기합니다.
-            interval = self.config.get("auto_sync_interval", 60)
-            logger.info(f"Going to deep sleep for {interval} seconds...")
-            for _ in range(interval):
-                if not self.running:
-                    break
-                await asyncio.sleep(1)
+                logger.error(f"Error in Trader Loop: {e}")
+                await asyncio.sleep(3)
                 
         logger.info("Trader Loop Stopped.")
 
-# 서버에서 글로벌하게 접근할 수 있도록 Singleton 인스턴스를 하나 둡니다.
+# Singleton instance for the server to use
 trader = TraderLoop()

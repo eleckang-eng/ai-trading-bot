@@ -72,9 +72,13 @@ def get_price(exchange: str, symbol: str):
 @app.post("/refresh_balance")
 def refresh_balance():
     """수동 잔고 동기화: 현재 선택된 거래소의 잔고를 API로부터 갱신한다."""
-    trader.update_balance()
+    success = trader.update_balance()
     exchange = trader.config.get("exchange", "kis")
-    return {"status": "success", "balance": trader.balances.get(exchange, 0)}
+    return {
+        "status": "success" if success else "error", 
+        "balance": trader.balances.get(exchange, 0),
+        "message": "잔고 갱신 성공" if success else "잔고 갱신 실패 (API 에러 등)"
+    }
 
 class OrderModel(BaseModel):
     side: str  # "buy" or "sell"
@@ -170,15 +174,32 @@ class CancelListModel(BaseModel):
 def cancel_list_orders(payload: CancelListModel):
     """선택한 주문(포지션)들의 ID를 받아 개별 취소(삭제)"""
     success_count = 0
+    errors = []
     for pid in payload.ids:
-        trader.delete_position(pid)
-        success_count += 1
+        try:
+            trader.delete_position(pid)
+            success_count += 1
+        except Exception as e:
+            errors.append(str(e))
+            
+    if errors:
+        return {"status": "error", "message": f"{success_count}건 취소 성공, 실패: {', '.join(errors)}"}
     return {"status": "success", "message": f"{success_count}건의 주문이 성공적으로 취소되었습니다."}
 
 @app.post("/order/sync")
 def sync_orders():
     """거래소 서버와 미체결 주문 동기화"""
     return trader.sync_orders()
+
+@app.get("/history")
+def get_trade_history(limit: int = 50):
+    """최근 체결/취소 내역 조회"""
+    return trader.get_history(limit)
+
+@app.post("/history/clear")
+def clear_trade_history():
+    """현재 모드의 거래내역 DB 영구 삭제"""
+    return trader.clear_history()
 
 @app.post("/system/restart")
 def restart_server():

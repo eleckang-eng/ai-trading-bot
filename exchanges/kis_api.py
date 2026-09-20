@@ -192,6 +192,27 @@ class KISClient(BaseExchange):
         res = requests.get(url, headers=headers, params=params)
         return res.json()
 
-    def cancel_order(self, order_id: str):
-        # 취소 로직 구현 필요
-        pass
+    def cancel_order(self, order_id: str, symbol: str = "042660"):
+        """
+        주식 주문 취소 (TTTC0803U / VTTC0803U)
+        - order_id: 취소할 원주문번호 (ODNO)
+        """
+        path = "/uapi/domestic-stock/v1/trading/order-rvsecnml"
+        url = f"{self.url_base}{path}"
+        headers = self._get_headers("TTTC0803U")
+        body = {
+            "CANO": self.cano,
+            "ACNT_PRDT_CD": self.acnt_prdt_cd,
+            "KRX_FWDG_ORD_ORGNO": "",
+            "ORGN_ODNO": order_id,
+            "ORD_DVSN": "00",          # 00: 지정가
+            "RVSE_CNCL_DVSN_CD": "02", # 02: 취소 (01: 정정)
+            "ORD_QTY": "0",            # 0: 전량 취소
+            "ORD_UNPR": "0",
+            "QTY_ALL_ORD_YN": "Y",
+            "PDNO": symbol
+        }
+        import json
+        res = requests.post(url, headers=headers, data=json.dumps(body))
+        print(f"KIS Cancel Response: {res.text}")
+        return res.json()

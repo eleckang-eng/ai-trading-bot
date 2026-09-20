@@ -194,22 +194,43 @@ title_str = f"📈 {ex_name} ({mode_name})"
 # 상단 헤더 메뉴바(Deploy 등)에 제목이 가려지는 것을 방지하기 위해 강제로 빈 줄 1칸 확보
 st.markdown("<br>", unsafe_allow_html=True) 
 
-c_title, c_msg, c_sync = st.columns([5, 2, 2])
+c_title, c_sync = st.columns([7, 3])
 with c_title:
     st.markdown(f"### {title_str}")
-with c_msg:
-    if st.session_state.get("sync_msg"):
-        color = "#4CAF50" if "✅" in st.session_state.sync_msg else "#f44336"
-        st.markdown(f"<p style='text-align:right; margin-top:10px; font-weight:bold; color:{color};'>{st.session_state.sync_msg}</p>", unsafe_allow_html=True)
-        st.session_state.sync_msg = None
 with c_sync:
-    if st.button("🔄 잔고 동기화", use_container_width=True):
+    if st.button("🔄 잔고갱신", use_container_width=True):
         try:
-            requests.post(f"{API_URL}/refresh_balance", timeout=15)
-            st.session_state.sync_msg = "✅ 동기화 완료"
+            r = requests.post(f"{API_URL}/refresh_balance", timeout=15)
+            if r.status_code == 200 and r.json().get("status") == "success":
+                st.session_state.sync_msg = "✅ 잔고 동기화가 성공적으로 완료되었습니다."
+            else:
+                st.session_state.sync_msg = "❌ 잔고 갱신 실패 (거래소 API 에러 등)"
         except:
-            st.session_state.sync_msg = "❌ 통신 실패"
+            st.session_state.sync_msg = "❌ 백엔드 통신 실패"
         st.rerun()
+
+if st.session_state.get("sync_msg"):
+    msg = st.session_state.sync_msg
+    color = "#155724" if "✅" in msg else "#721c24"
+    bg = "#d4edda" if "✅" in msg else "#f8d7da"
+    border = "#c3e6cb" if "✅" in msg else "#f5c6cb"
+    
+    st.markdown(f"""
+    <div class="fade-out-msg" style="padding:1rem; margin-bottom:1rem; border-radius:0.5rem; color:{color}; background-color:{bg}; border: 1px solid {border}; font-weight:bold;">
+        {msg}
+    </div>
+    <style>
+    .fade-out-msg {{
+        animation: fadeOutMsg 5s forwards;
+    }}
+    @keyframes fadeOutMsg {{
+        0% {{ opacity: 1; max-height: 100px; padding: 1rem; margin-bottom: 1rem; border-width: 1px; }}
+        80% {{ opacity: 1; max-height: 100px; padding: 1rem; margin-bottom: 1rem; border-width: 1px; }}
+        100% {{ opacity: 0; max-height: 0px; padding: 0px; margin-bottom: 0px; border-width: 0px; overflow: hidden; }}
+    }}
+    </style>
+    """, unsafe_allow_html=True)
+    st.session_state.sync_msg = None
 
 # ══════════════════════════════════════════════════════
 # 사이드바
@@ -331,12 +352,14 @@ with tab_order:
                 st.error(f"서버조회 실패: {e}")
 
         if True: # 내부 중복 expander 제거됨
+            key_suffix = f"_{current_exchange}_{cfg.get('mock_mode', True)}"
+
             # 2. 매도 간격 / 매도주문 수량 (입력창 가로 2개)
             col_sell_1, col_sell_2 = st.columns(2)
             with col_sell_1:
-                take_profit = st.number_input("매도 간격 (수익폭)", min_value=1, value=int(ex_cfg.get("take_profit", default_profit)), step=step_val)
+                take_profit = st.number_input("매도 간격 (수익폭)", min_value=1, value=int(ex_cfg.get("take_profit", default_profit)), step=step_val, key=f"tp{key_suffix}")
             with col_sell_2:
-                sell_count  = st.number_input("매도주문 개수", min_value=1, max_value=50, value=10, step=1)
+                sell_count  = st.number_input("매도주문 개수", min_value=1, max_value=50, value=10, step=1, key=f"sc{key_suffix}")
 
             # 3. 기준가 / 1회 매수 수량 (입력창 가로 2개)
             cached_price = st.session_state.get("manual_price", 0)
@@ -344,19 +367,19 @@ with tab_order:
         
             col_base_1, col_base_2 = st.columns(2)
             with col_base_1:
-                base_price = st.number_input("기준가", min_value=0.0, value=base_price_val, step=float(step_val), help="0 입력 시 현재가로 자동 적용")
+                base_price = st.number_input("기준가", min_value=0.0, value=base_price_val, step=float(step_val), help="0 입력 시 현재가로 자동 적용", key=f"bp{key_suffix}")
             with col_base_2:
-                order_quantity = st.number_input("1회 매수 수량", min_value=1, value=int(ex_cfg.get("order_quantity", default_qty)), step=1)
+                order_quantity = st.number_input("1회 매수 수량", min_value=1, value=int(ex_cfg.get("order_quantity", default_qty)), step=1, key=f"oq{key_suffix}")
 
             # 4. 매수 간격 / 매수주문 수량 (입력창 가로 2개)
             col_buy_1, col_buy_2 = st.columns(2)
             with col_buy_1:
-                grid_interval = st.number_input("매수 간격 (하락폭)", min_value=1, value=int(ex_cfg.get("grid_interval", default_grid)), step=step_val)
+                grid_interval = st.number_input("매수 간격 (하락폭)", min_value=1, value=int(ex_cfg.get("grid_interval", default_grid)), step=step_val, key=f"gi{key_suffix}")
             with col_buy_2:
-                buy_count     = st.number_input("매수주문 개수", min_value=1, max_value=50, value=10, step=1)
+                buy_count     = st.number_input("매수주문 개수", min_value=1, max_value=50, value=10, step=1, key=f"bc{key_suffix}")
 
             # 5. 주문 방향 (라디오 버튼 3개)
-            grid_direction = st.radio("주문 방향", ["매수/매도 모두", "매수만", "매도만"], index=0, horizontal=True)
+            grid_direction = st.radio("주문 방향", ["매수/매도 모두", "매수만", "매도만"], index=0, horizontal=True, key=f"gd{key_suffix}")
 
             # ── 그리드 생성 헬퍼 ──
             def _calc_base_price():
@@ -369,13 +392,13 @@ with tab_order:
                 if grid_direction in ["매도만", "매수/매도 모두"]:
                     for i in range(1, int(sell_count) + 1):
                         s_price = bp + (take_profit * i)
-                        s_price = (s_price // 1000) * 1000 + 900 if is_kis else round(s_price, 2)
+                        s_price = (s_price // 1000) * 1000 + 900 if is_kis else (s_price // 10) * 10 + 9
                         sell_list.append({"선택": True, "가격": int(s_price), "수량": int(qty)})
                 if grid_direction in ["매수만", "매수/매도 모두"]:
                     for i in range(1, int(buy_count) + 1):
                         b_price = bp - (grid_interval * i)
                         if b_price <= 0: break
-                        b_price = (b_price // 1000) * 1000 + 100 if is_kis else round(b_price, 2)
+                        b_price = (b_price // 1000) * 1000 + 100 if is_kis else (b_price // 10) * 10 + 1
                         buy_list.append({"선택": True, "가격": int(b_price), "수량": int(qty)})
                 return sell_list, buy_list
 
@@ -393,11 +416,11 @@ with tab_order:
             st.caption("계단형: 지정한 방향에만 수량을 증액하는 그리드")
             stair_c1, stair_c2 = st.columns(2)
             with stair_c1:
-                stair_steps = st.number_input("증액 계단 수량", min_value=1, max_value=10, value=3, step=1, help="몇 단계마다 수량이 증액되는지")
+                stair_steps = st.number_input("증액 계단 수량", min_value=1, max_value=10, value=3, step=1, help="몇 단계마다 수량이 증액되는지", key=f"ss{key_suffix}")
             with stair_c2:
-                stair_add_qty = st.number_input("증액 수량", min_value=1, value=5 if is_kis else 500, step=1, help="계단 한 단계당 추가되는 수량")
+                stair_add_qty = st.number_input("증액 수량", min_value=1, value=5 if is_kis else 500, step=1, help="계단 한 단계당 추가되는 수량", key=f"saq{key_suffix}")
 
-            stair_direction = st.radio("계단 적용 방향", ["매수매도계단", "매수계단", "매도계단"], index=0, horizontal=True)
+            stair_direction = st.radio("계단 적용 방향", ["매수매도계단", "매수계단", "매도계단"], index=0, horizontal=True, key=f"sd{key_suffix}")
 
             # 8. 계단형그리드생성 (버튼 1개)
             if st.button("📈 계단형 그리드 생성", use_container_width=True):
@@ -406,7 +429,7 @@ with tab_order:
                 if grid_direction in ["매도만", "매수/매도 모두"]:
                     for i in range(1, int(sell_count) + 1):
                         s_price = bp + (take_profit * i)
-                        s_price = (s_price // 1000) * 1000 + 900 if is_kis else round(s_price, 2)
+                        s_price = (s_price // 1000) * 1000 + 900 if is_kis else (s_price // 10) * 10 + 9
                     
                         if stair_direction in ["매수매도계단", "매도계단"]:
                             stair_level = (i - 1) // int(stair_steps)
@@ -420,7 +443,7 @@ with tab_order:
                     for i in range(1, int(buy_count) + 1):
                         b_price = bp - (grid_interval * i)
                         if b_price <= 0: break
-                        b_price = (b_price // 1000) * 1000 + 100 if is_kis else round(b_price, 2)
+                        b_price = (b_price // 1000) * 1000 + 100 if is_kis else (b_price // 10) * 10 + 1
                     
                         if stair_direction in ["매수매도계단", "매수계단"]:
                             stair_level = (i - 1) // int(stair_steps)
@@ -1046,12 +1069,6 @@ with tab_order:
     st.write("") # 세로 여백 추가
     st.write("") # 세로 여백 추가
 
-    # 미체결 전체 취소 (버튼 1개)
-    if st.button("🗑️ 미체결 전체 취소", use_container_width=True, type="primary"):
-        st.session_state.confirm_cancel_all  = True
-        st.session_state.manual_order_result = None
-        st.rerun()
-
     # 수동 주문 확인창
     if st.session_state.get("confirm_manual_order"):
         order    = st.session_state.confirm_manual_order
@@ -1081,6 +1098,14 @@ with tab_order:
             if st.button("❌ 취소", use_container_width=True):
                 st.session_state.confirm_manual_order = None
                 st.rerun()
+                
+        st.write("") # 수동 주문 확인창과 아래 버튼 사이의 여백
+        st.write("")
+    # 미체결 전체 취소 (버튼 1개)
+    if st.button("🗑️ 미체결 전체 취소", use_container_width=True, type="primary"):
+        st.session_state.confirm_cancel_all  = True
+        st.session_state.manual_order_result = None
+        st.rerun()
 
     # 미체결 전체 취소 확인창
     if st.session_state.get("confirm_cancel_all"):
@@ -1293,8 +1318,11 @@ with tab_dash:
                     res = requests.post(f"{API_URL}/order/cancel_list", json={"ids": ids_to_cancel}, timeout=5)
                     
                     if res.status_code == 200:
-                        # 성공 메시지를 즉시 띄우면 rerun에 의해 증발하므로 session_state에 보관
-                        st.session_state.dash_cancel_msg = f"✅ {len(ids_to_cancel)}건 주문 취소 처리 성공"
+                        res_data = res.json()
+                        if res_data.get("status") == "success":
+                            st.session_state.dash_cancel_msg = f"✅ {res_data.get('message', '취소 성공')}"
+                        else:
+                            st.session_state.dash_cancel_msg = f"❌ {res_data.get('message', '취소 실패')}"
                         
                         # [UI 더미 테스트 전용] 백엔드 DB가 비어있어서 계속 똑같은 더미 데이터가 주입되는 현상을 막기 위해
                         # 방금 취소한 가짜 ID들을 기억해두고 렌더링 시 제외시킵니다.
@@ -1312,9 +1340,11 @@ with tab_dash:
                     # 증권사 API 오류가 아닌 백엔드 서버 자체가 죽었거나 인터넷이 끊긴 경우
                     st.error(f"❌ {len(ids_to_cancel)}건 주문 취소 처리 실패 (사유: 서버 응답 없음 또는 네트워크 에러 - {e})")
                     
-        # 이전 rerun() 에서 저장된 성공 메시지가 있다면 화면에 띄우고 확인 대기
         if st.session_state.get("dash_cancel_msg"):
-            st.success(st.session_state.dash_cancel_msg)
+            if st.session_state.dash_cancel_msg.startswith("❌"):
+                st.error(st.session_state.dash_cancel_msg)
+            else:
+                st.success(st.session_state.dash_cancel_msg)
             if st.button("확인", key="ok_dash_cancel"):
                 st.session_state.dash_cancel_msg = None
                 st.rerun()
@@ -1340,18 +1370,53 @@ with tab_dash:
 
 # ── 신규 거래 내역 탭 ────────────────────────────────
 with tab_history:
-    st.subheader("💸 거래 내역")
-    st.info("알고리즘 가동 시 실시간으로 기록됩니다. (백엔드 연동 전 임시 레이아웃)")
-    import datetime
-    now = datetime.datetime.now()
-    if curr_ex == "kis" and curr_paper:
-        dummy_history = [
-            {"시간": (now - datetime.timedelta(minutes=45)).strftime("%Y-%m-%d %H:%M:%S"), "종류": "🔴 매수", "가격(원)": "83,500", "수량": "10", "상태": "✅ 체결"},
-            {"시간": (now - datetime.timedelta(minutes=30)).strftime("%Y-%m-%d %H:%M:%S"), "종류": "🔵 매도", "가격(원)": "85,500", "수량": "10", "상태": "✅ 체결"},
-            {"시간": (now - datetime.timedelta(minutes=25)).strftime("%Y-%m-%d %H:%M:%S"), "종류": "🔴 매수", "가격(원)": "82,500", "수량": "10", "상태": "✅ 체결"},
-            {"시간": (now - datetime.timedelta(minutes=15)).strftime("%Y-%m-%d %H:%M:%S"), "종류": "🔵 매도", "가격(원)": "84,500", "수량": "10", "상태": "✅ 체결"},
-            {"시간": (now - datetime.timedelta(minutes=2)).strftime("%Y-%m-%d %H:%M:%S"),  "종류": "🔴 매수", "가격(원)": "81,500", "수량": "10", "상태": "✅ 체결"},
-        ]
-        st.dataframe(pd.DataFrame(dummy_history), use_container_width=True, hide_index=True)
-    else:
-        st.dataframe(pd.DataFrame(columns=["시간", "종류", "가격(원)", "수량", "상태"]), use_container_width=True)
+    hc1, hc2 = st.columns([0.6, 0.4])
+    with hc1:
+        st.subheader("💸 실시간 거래 내역")
+    with hc2:
+        with st.expander("🗑️ 내역 초기화"):
+            st.warning("내역 전체 삭제")
+            if st.button("영구 삭제", use_container_width=True):
+                try:
+                    c_res = requests.post(f"{API_URL}/history/clear", timeout=5)
+                    if c_res.status_code == 200:
+                        st.session_state.history_msg = "✅ 거래 내역이 성공적으로 초기화되었습니다."
+                    else:
+                        st.session_state.history_msg = f"❌ 초기화 실패: {c_res.text}"
+                except Exception as e:
+                    st.session_state.history_msg = f"❌ 통신 에러: {e}"
+                st.rerun()
+
+    if st.session_state.get("history_msg"):
+        if st.session_state.history_msg.startswith("✅"):
+            st.success(st.session_state.history_msg)
+        else:
+            st.error(st.session_state.history_msg)
+        if st.button("알림 닫기", key="close_hist_msg"):
+            st.session_state.history_msg = None
+            st.rerun()
+    
+    try:
+        hist_res = requests.get(f"{API_URL}/history?limit=100", timeout=5)
+        if hist_res.status_code == 200:
+            history_data = hist_res.json()
+            if history_data:
+                formatted_history = []
+                for h in history_data:
+                    side_str = "🔴 매수" if h['side'] == 'buy' else "🔵 매도"
+                    status_str = "✅ 체결" if h['status'] == 'filled' else "❌ 취소"
+                    formatted_history.append({
+                        "시간": h['filled_at'],
+                        "종류": side_str,
+                        "가격(원)": f"{float(h['price']):,g}",
+                        "수량": f"{float(h['quantity']):,g}",
+                        "상태": status_str
+                    })
+                st.dataframe(pd.DataFrame(formatted_history), use_container_width=True, hide_index=True)
+            else:
+                st.info("아직 기록된 체결 또는 취소 내역이 없습니다.")
+        else:
+            st.error("거래 내역을 불러오지 못했습니다.")
+    except Exception as e:
+        st.error(f"백엔드 서버 통신 오류: {e}")
+
