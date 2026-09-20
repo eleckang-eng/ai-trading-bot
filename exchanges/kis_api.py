@@ -192,6 +192,25 @@ class KISClient(BaseExchange):
         res = requests.get(url, headers=headers, params=params)
         return res.json()
 
+    def get_realized_profit(self, start_dt: str, end_dt: str):
+        """주식기간별실현손익조회 (TTTC8495R / VTTC8495R)"""
+        path = "/uapi/domestic-stock/v1/trading/inquire-period-trade-profit"
+        url = f"{self.url_base}{path}"
+        headers = self._get_headers("TTTC8495R")
+        params = {
+            "CANO": self.cano,
+            "ACNT_PRDT_CD": self.acnt_prdt_cd,
+            "INQR_STRT_DT": start_dt,
+            "INQR_END_DT": end_dt,
+            "SLL_BUY_DVSN_CD": "00",
+            "INQR_DVSN": "00",
+            "PDNO": "",
+            "CTX_AREA_FK100": "",
+            "CTX_AREA_NK100": "",
+        }
+        res = requests.get(url, headers=headers, params=params)
+        return res.json()
+
     def cancel_order(self, order_id: str, symbol: str = "042660"):
         """
         주식 주문 취소 (TTTC0803U / VTTC0803U)

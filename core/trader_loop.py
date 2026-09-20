@@ -201,6 +201,7 @@ class TraderLoop:
         total_profit = 0.0
         today_trade_count = 0
         
+        # 기본 DB 기반 명목 수익 및 체결 횟수 산출 (FIFO)
         for row in rows:
             filled_at_str, side, price, qty = row
             
@@ -217,15 +218,41 @@ class TraderLoop:
                     oldest_buy = unmatched_buys[0]
                     match_qty = min(sell_qty, oldest_buy["qty"])
                     
-                    # 실현 수익 산출 (매도단가 - 매수단가) * 수량
-                    profit = (sell_price - oldest_buy["price"]) * match_qty
-                    total_profit += profit
+                    # FIFO 기반 차익 산출
+                    gross_profit = (sell_price - oldest_buy["price"]) * match_qty
+                    
+                    # 수수료(Fee) 및 세금(Tax) 자체 캘리브레이션 (Bithumb 0.04%, KIS 0.2% 매도세율 가정)
+                    fee_rate = 0.00215 if "kis" in mode_key else 0.0004
+                    net_profit = gross_profit - (sell_price * match_qty * fee_rate)
+                    
+                    total_profit += net_profit
                     
                     sell_qty -= match_qty
                     oldest_buy["qty"] -= match_qty
                     
                     if oldest_buy["qty"] <= 0:
                         unmatched_buys.pop(0)
+
+        # KIS 실거래 모드인 경우 하이브리드 오차 보정 (거래소 API 호출)
+        if mode_key == "kis_real" and self.kis:
+            # 1분 단위 캐싱을 통해 무분별한 API 호출(Rate Limit) 방지
+            import time
+            current_time = time.time()
+            if current_time - getattr(self, "_last_profit_sync", 0) > 60:
+                self._last_profit_sync = current_time
+                try:
+                    start_dt = datetime.datetime.now().strftime("%Y%m01") # 당월 1일부터 조회
+                    end_dt = datetime.datetime.now().strftime("%Y%m%d")
+                    res = self.kis.get_realized_profit(start_dt, end_dt)
+                    if res.get("rt_cd") == "0":
+                        out2 = res.get("output2", [])
+                        if out2 and isinstance(out2, list):
+                            # API에서 실현손익을 제공하면 그 값으로 덮어씀 (안전한 보정)
+                            # 보통 rlzt_pfls_amt 또는 tot_rlzt_pfls_amt 키 사용
+                            calibrated_profit = float(out2[0].get("rlzt_pfls_amt", out2[0].get("tot_rlzt_pfls_amt", total_profit)))
+                            total_profit = calibrated_profit
+                except Exception as e:
+                    self.logger.error(f"실현손익 API 캘리브레이션 실패: {e}")
 
         return total_profit, today_trade_count
 
