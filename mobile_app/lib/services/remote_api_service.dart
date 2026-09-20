@@ -11,7 +11,7 @@ class RemoteApiService implements BaseApiService {
   @override
   Future<Map<String, dynamic>> getStatus() async {
     try {
-      final res = await http.get(Uri.parse('${baseUrl}/status?exchange=${exchange}')).timeout(const Duration(seconds: 5));
+      final res = await http.get(Uri.parse('${baseUrl}/status')).timeout(const Duration(seconds: 5));
       if (res.statusCode == 200) return jsonDecode(res.body);
       return {'status': 'error', 'message': 'HTTP ${res.statusCode}'};
     } catch (e) {
@@ -20,9 +20,9 @@ class RemoteApiService implements BaseApiService {
   }
 
   @override
-  Future<double> getPrice(String symbol) async {
+  Future<double> getPrice(String exch, String symbol) async {
     try {
-      final res = await http.get(Uri.parse('${baseUrl}/price?exchange=${exchange}&symbol=${symbol}')).timeout(const Duration(seconds: 3));
+      final res = await http.get(Uri.parse('${baseUrl}/price?exchange=$exch&symbol=$symbol')).timeout(const Duration(seconds: 3));
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
         return (data['price'] ?? 0).toDouble();
@@ -39,7 +39,22 @@ class RemoteApiService implements BaseApiService {
       final res = await http.post(
         Uri.parse('${baseUrl}/order/manual'),
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({"exchange": exchange, "side": side, "symbol": symbol, "quantity": quantity, "price": price}),
+        body: jsonEncode({"side": side, "quantity": quantity, "price": price}),
+      ).timeout(const Duration(seconds: 10));
+      if (res.statusCode == 200) return jsonDecode(res.body);
+      return {'status': 'error', 'message': 'HTTP ${res.statusCode}'};
+    } catch (e) {
+      return {'status': 'error', 'message': e.toString()};
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> cancelOrder(String orderId) async {
+    try {
+      final res = await http.post(
+        Uri.parse('${baseUrl}/order/cancel'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({"order_id": orderId}),
       ).timeout(const Duration(seconds: 10));
       if (res.statusCode == 200) return jsonDecode(res.body);
       return {'status': 'error', 'message': 'HTTP ${res.statusCode}'};
@@ -53,8 +68,7 @@ class RemoteApiService implements BaseApiService {
     try {
       final res = await http.post(
         Uri.parse('${baseUrl}/order/cancel_all'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({"exchange": exchange}),
+        headers: {'Content-Type': 'application/json'}
       ).timeout(const Duration(seconds: 15));
       if (res.statusCode == 200) return jsonDecode(res.body);
       return {'status': 'error', 'message': 'HTTP ${res.statusCode}'};
@@ -67,6 +81,32 @@ class RemoteApiService implements BaseApiService {
   Future<Map<String, dynamic>> refreshBalance() async {
     try {
       final res = await http.post(Uri.parse('${baseUrl}/refresh_balance')).timeout(const Duration(seconds: 15));
+      if (res.statusCode == 200) return jsonDecode(res.body);
+      return {'status': 'error', 'message': 'HTTP ${res.statusCode}'};
+    } catch (e) {
+      return {'status': 'error', 'message': e.toString()};
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> syncOrders() async {
+    try {
+      final res = await http.post(Uri.parse('${baseUrl}/order/sync')).timeout(const Duration(seconds: 15));
+      if (res.statusCode == 200) return jsonDecode(res.body);
+      return {'status': 'error', 'message': 'HTTP ${res.statusCode}'};
+    } catch (e) {
+      return {'status': 'error', 'message': e.toString()};
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> updateConfig(Map<String, dynamic> payload) async {
+    try {
+      final res = await http.post(
+        Uri.parse('${baseUrl}/config'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(payload),
+      ).timeout(const Duration(seconds: 5));
       if (res.statusCode == 200) return jsonDecode(res.body);
       return {'status': 'error', 'message': 'HTTP ${res.statusCode}'};
     } catch (e) {

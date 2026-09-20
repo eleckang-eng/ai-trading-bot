@@ -1,5 +1,6 @@
 import 'base_api_service.dart';
-import '../api/kis_api.dart';
+import '../../exchanges/kis_api.dart';
+import 'database.dart';
 
 class KisStandaloneService implements BaseApiService {
   final KisApi kisApi;
@@ -8,63 +9,28 @@ class KisStandaloneService implements BaseApiService {
 
   @override
   Future<Map<String, dynamic>> getStatus() async {
-    try {
-      final data = await kisApi.getBalance();
-      
-      // KIS API 응답을 공통 포맷으로 매핑
-      // KIS 응답: output1(잔고내역 배열), output2(계좌종합)
-      final output2 = data['output2'];
-      int balance = 0;
-      if (output2 != null && output2 is List && output2.isNotEmpty) {
-        balance = int.tryParse(output2[0]['dnca_tot_amt'] ?? '0') ?? 0;
-      }
-      
-      List<dynamic> positions = [];
-      final output1 = data['output1'];
-      if (output1 != null && output1 is List) {
-        for (var item in output1) {
-          positions.add({
-            'symbol': item['pdno'] ?? '',
-            'avg_price': double.tryParse(item['pchs_avg_pric'] ?? '0') ?? 0,
-            'quantity': double.tryParse(item['hldg_qty'] ?? '0') ?? 0,
-          });
-        }
-      }
-      
-      return {
-        'status': 'success',
-        'balance': balance,
-        'positions': positions,
-      };
-    } catch (e) {
-      return {'status': 'error', 'message': e.toString()};
-    }
+    final positions = await DatabaseHelper.instance.getActivePositions("005930");
+    return {
+      'status': 'success',
+      'config': {'exchange': 'kis', 'symbol': '005930'},
+      'bullets': positions
+    };
   }
 
   @override
-  Future<double> getPrice(String symbol) async {
-    // KIS 단독 모드에서는 WebSocket이나 별도의 현재가 API가 필요하지만
-    // 여기서는 임시로 잔고 API나 고정값을 리턴(실제 구현에서는 KIS 시세 API 호출 필요)
-    return 30000.0; 
+  Future<double> getPrice(String exchange, String symbol) async {
+    final price = await kisApi.fetch_current_price(symbol);
+    return price.toDouble();
   }
 
   @override
   Future<Map<String, dynamic>> sendOrder(String side, String symbol, double quantity, double price) async {
-    try {
-      final data = await kisApi.placeOrder(
-        orderType: side,
-        symbol: symbol,
-        price: price.toInt(),
-        qty: quantity.toInt()
-      );
-      // rt_cd == '0' 이면 성공
-      if (data['rt_cd'] == '0') {
-        return {'status': 'success', 'data': data};
-      }
-      return {'status': 'error', 'message': data['msg1'] ?? 'Unknown error'};
-    } catch (e) {
-      return {'status': 'error', 'message': e.toString()};
-    }
+    return {'status': 'error', 'message': '단독 모드 수동 주문 미지원'};
+  }
+
+  @override
+  Future<Map<String, dynamic>> cancelOrder(String orderId) async {
+    return {'status': 'error', 'message': '단독 모드 주문 취소 미지원'};
   }
 
   @override

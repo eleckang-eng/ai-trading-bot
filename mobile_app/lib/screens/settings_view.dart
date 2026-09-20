@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 import '../services/base_api_service.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
 
 class SettingsView extends StatefulWidget {
   final BaseApiService apiService;
@@ -86,13 +84,8 @@ class _SettingsViewState extends State<SettingsView> {
     String newSymbol = newExchange == "bithumb" ? "ONDO" : "042660";
 
     try {
-      final res = await http.get(Uri.parse('http://127.0.0.1:8000/price?exchange=$newExchange&symbol=$newSymbol'));
-      double fetchedP = 0;
-      if (res.statusCode == 200) {
-        final d = json.decode(res.body);
-        fetchedP = (d['price'] ?? 0).toDouble();
-      }
-
+      double fetchedP = await widget.apiService.getPrice(newExchange, newSymbol);
+      
       Map<String, dynamic> payload = {
         "exchange": newExchange,
         "symbol": newSymbol,
@@ -103,20 +96,18 @@ class _SettingsViewState extends State<SettingsView> {
         payload[newExchange] = {"base_price": fetchedP};
       }
 
-      final postRes = await http.post(
-        Uri.parse('http://127.0.0.1:8000/config'),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode(payload)
-      );
+      final postRes = await widget.apiService.updateConfig(payload);
 
-      if (postRes.statusCode == 200) {
+      if (postRes['status'] == 'success') {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ 모드가 변경되었습니다.'), backgroundColor: Colors.green));
-        await http.post(Uri.parse('http://127.0.0.1:8000/refresh_balance'));
-        await http.post(Uri.parse('http://127.0.0.1:8000/order/sync'));
+        await widget.apiService.refreshBalance();
+        await widget.apiService.syncOrders();
         _fetchConfig();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('❌ 모드 변경 실패: ${postRes['message']}'), backgroundColor: Colors.red));
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('❌ 모드 변경 실패: $e'), backgroundColor: Colors.red));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('❌ 모드 변경 에러: $e'), backgroundColor: Colors.red));
     }
   }
 
@@ -138,26 +129,18 @@ class _SettingsViewState extends State<SettingsView> {
     if (confirm != true) return;
 
     try {
-      final res = await http.get(Uri.parse('http://127.0.0.1:8000/price?exchange=$_currentExchange&symbol=$newSym'));
-      double fetchedP = 0;
-      if (res.statusCode == 200) {
-        final d = json.decode(res.body);
-        fetchedP = (d['price'] ?? 0).toDouble();
-      }
-
+      double fetchedP = await widget.apiService.getPrice(_currentExchange, newSym);
       if (fetchedP > 0) {
         Map<String, dynamic> payload = {
           "symbol": newSym,
           _currentExchange: {"base_price": fetchedP}
         };
-        final postRes = await http.post(
-          Uri.parse('http://127.0.0.1:8000/config'),
-          headers: {'Content-Type': 'application/json'},
-          body: json.encode(payload)
-        );
-        if (postRes.statusCode == 200) {
+        final postRes = await widget.apiService.updateConfig(payload);
+        if (postRes['status'] == 'success') {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('✅ 종목 변경 성공 (현재가: $fetchedP)'), backgroundColor: Colors.green));
           _fetchConfig();
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('❌ 종목 변경 실패: ${postRes['message']}'), backgroundColor: Colors.red));
         }
       } else {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('❌ 잘못된 종목이거나 가격을 조회할 수 없습니다.'), backgroundColor: Colors.red));
@@ -183,17 +166,15 @@ class _SettingsViewState extends State<SettingsView> {
     if (confirm != true) return;
 
     try {
-      final res = await http.post(
-        Uri.parse('http://127.0.0.1:8000/config'),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({"auto_sync_interval": val})
-      );
-      if (res.statusCode == 200) {
+      final res = await widget.apiService.updateConfig({"auto_sync_interval": val});
+      if (res['status'] == 'success') {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ 동기화 간격 변경 성공'), backgroundColor: Colors.green));
         _fetchConfig();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('❌ 에러: ${res['message']}'), backgroundColor: Colors.red));
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('❌ 에러: $e'), backgroundColor: Colors.red));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('❌ 예외 발생: $e'), backgroundColor: Colors.red));
     }
   }
 
@@ -247,3 +228,4 @@ class _SettingsViewState extends State<SettingsView> {
     );
   }
 }
+

@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 import '../services/base_api_service.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
 
 class GridOrderView extends StatefulWidget {
   final BaseApiService apiService;
@@ -75,16 +73,12 @@ class _GridOrderViewState extends State<GridOrderView> {
 
   Future<void> _fetchCurrentPrice() async {
     try {
-      final url = Uri.parse('http://127.0.0.1:8000/price?exchange=$_exchange&symbol=$_symbol');
-      final res = await http.get(url).timeout(const Duration(seconds: 5));
-      if (res.statusCode == 200) {
-        final data = json.decode(res.body);
-        if (data['price'] != null && data['price'] > 0) {
-          setState(() {
-            _cachedPrice = data['price'].toDouble();
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('현재가 조회 성공: $_cachedPrice원')));
-          });
-        }
+      final price = await widget.apiService.getPrice(_exchange, _symbol);
+      if (price > 0) {
+        setState(() {
+          _cachedPrice = price;
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('현재가 조회 성공: $_cachedPrice원')));
+        });
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('현재가 조회 실패: $e')));

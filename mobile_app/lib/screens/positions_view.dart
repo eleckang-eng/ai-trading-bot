@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../services/base_api_service.dart';
-import 'package:http/http.dart' as http;
 
 class PositionsView extends StatefulWidget {
   final BaseApiService apiService;
@@ -58,12 +57,12 @@ class _PositionsViewState extends State<PositionsView> {
     if (confirm != true) return;
 
     try {
-      final res = await http.post(Uri.parse('http://127.0.0.1:8000/order/cancel'), body: {'order_id': id});
-      if (res.statusCode == 200) {
+      final res = await widget.apiService.cancelOrder(id);
+      if (res['status'] == 'success') {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('주문이 취소되었습니다.')));
         _loadPositions();
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('주문 취소 실패'), backgroundColor: Colors.red));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('주문 취소 실패: ${res['message']}'), backgroundColor: Colors.red));
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('에러: $e'), backgroundColor: Colors.red));
@@ -85,12 +84,12 @@ class _PositionsViewState extends State<PositionsView> {
     if (confirm != true) return;
 
     try {
-      final res = await http.post(Uri.parse('http://127.0.0.1:8000/order/cancel_all'));
-      if (res.statusCode == 200) {
+      final res = await widget.apiService.cancelAllOrders();
+      if (res['status'] == 'success') {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ 전체 주문 일괄 취소가 서버로 요청되었습니다.'), backgroundColor: Colors.green));
         _loadPositions();
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('❌ 일괄 취소 실패'), backgroundColor: Colors.red));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('❌ 일괄 취소 실패: ${res['message']}'), backgroundColor: Colors.red));
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('에러: $e'), backgroundColor: Colors.red));
