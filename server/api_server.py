@@ -167,6 +167,21 @@ def cancel_all_orders():
     """미체결 주문 일괄 취소"""
     return trader.cancel_all_orders()
 
+class CancelSingleOrderModel(BaseModel):
+    order_id: int
+
+@app.post("/order/cancel")
+def cancel_single_order(payload: CancelSingleOrderModel):
+    """단건 주문 취소"""
+    try:
+        success = trader.delete_position(payload.order_id)
+        if success:
+            return {"status": "success", "message": f"{payload.order_id}번 주문이 성공적으로 취소되었습니다."}
+        else:
+            return {"status": "error", "message": f"주문 취소에 실패했습니다 (API 오류)."}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
 class CancelListModel(BaseModel):
     ids: list[int]
 
@@ -177,8 +192,11 @@ def cancel_list_orders(payload: CancelListModel):
     errors = []
     for pid in payload.ids:
         try:
-            trader.delete_position(pid)
-            success_count += 1
+            success = trader.delete_position(pid)
+            if success:
+                success_count += 1
+            else:
+                errors.append(f"{pid}(API 실패)")
         except Exception as e:
             errors.append(str(e))
             

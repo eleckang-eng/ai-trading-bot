@@ -237,27 +237,31 @@ class TraderLoop:
             if row:
                 ex_mode, order_id, symbol, qty, price, side = row
                 if cancel_api:
-                    self._cancel_order_via_api(ex_mode, order_id, symbol)
-                    # 수동으로 취소 요청(cancel_api=True)을 해서 성공한 경우에만 히스토리에 '취소' 기록
-                    self.record_trade(symbol, qty, price, side, ex_mode, "canceled")
+                    try:
+                        self._cancel_order_via_api(ex_mode, order_id, symbol)
+                        self.record_trade(symbol, qty, price, side, ex_mode, "canceled")
+                    except Exception as e:
+                        logger.error(f"주문 취소 API 에러로 DB 삭제 보류 (ID: {position_id})")
+                        return False # 에러 시 DB 삭제 보류
             conn.execute('DELETE FROM grid_bullets WHERE id = ?', (position_id,))
             conn.commit()
+        return True
 
     def delete_all_positions(self):
         """현재 모드의 포지션 일괄 취소 및 삭제"""
         mode_key = self._get_mode_key()
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
-            cursor.execute('SELECT order_id, symbol, quantity, buy_price, side FROM grid_bullets WHERE exchange_mode = ?', (mode_key,))
+            cursor.execute('SELECT id, order_id, symbol, quantity, buy_price, side FROM grid_bullets WHERE exchange_mode = ?', (mode_key,))
             rows = cursor.fetchall()
             for r in rows:
+                p_id, o_id, sym, qty, price, side = r
                 try:
-                    self._cancel_order_via_api(mode_key, r[0], r[1])
-                    self.record_trade(r[1], r[2], r[3], r[4], mode_key, "canceled")
+                    self._cancel_order_via_api(mode_key, o_id, sym)
+                    self.record_trade(sym, qty, price, side, mode_key, "canceled")
+                    conn.execute('DELETE FROM grid_bullets WHERE id = ?', (p_id,))
                 except Exception as e:
-                    logger.error(f"일괄 취소 실패 (ODNO: {r[0]}): {e}")
-                    pass # 일괄 취소는 에러 나도 계속 진행
-            conn.execute('DELETE FROM grid_bullets WHERE exchange_mode = ?', (mode_key,))
+                    logger.error(f"일괄 취소 실패 (ODNO: {o_id}): {e}. DB 삭제 보류.")
             conn.commit()
 
 
@@ -286,10 +290,16 @@ class TraderLoop:
             except Exception as e:
                 logger.error(f"Bithumb Balance fetch error: {e}")
                 
+        if success:
+            self._last_balance_update = __import__("time").time()
         return success
 
     def get_status(self):
-        # UI 조회 속도를 위해 네트워크 통신(update_balance)을 빼고, 메모리에 캐싱된 값만 즉시 반환
+        # 5초 초과 시 자동 잔고 갱신 (TTL 기반 실시간 보장)
+        current_time = __import__("time").time()
+        if current_time - getattr(self, "_last_balance_update", 0) > 5:
+            self.update_balance()
+            
         current_exchange = self.config.get("exchange", "kis")
         is_connected = False
         if current_exchange == "kis":
@@ -449,14 +459,14 @@ class TraderLoop:
         try:
             if exchange == "kis" and self.kis:
                 import datetime
-                today = datetime.datetime.now().strftime("%Y%M%d")
-                
                 # 1. 미체결 주문 조회 (현재 살아있는 주문)
                 open_res = self.kis.get_open_orders()
-                # 2. 당일 체결 내역 조회 (이미 체결된 주문)
-                # 실제 API에서 11월은 %m 이어야 하므로 포맷 수정: %Y%m%d
-                today = datetime.datetime.now().strftime("%Y%m%d")
-                filled_res = self.kis.get_daily_orders(today, today)
+                # 2. 전일~당일 체결 내역 조회 (어제 체결된 것도 확인)
+                today = datetime.datetime.now()
+                yesterday = today - datetime.timedelta(days=1)
+                today_str = today.strftime("%Y%m%d")
+                yesterday_str = yesterday.strftime("%Y%m%d")
+                filled_res = self.kis.get_daily_orders(yesterday_str, today_str)
                 
                 if open_res.get("rt_cd") == "0" and filled_res.get("rt_cd") == "0":
                     open_list = open_res.get("output", [])
@@ -651,13 +661,15 @@ class TraderLoop:
                     if p_side == "sell" and current_price >= p_price:
                         logger.info(f"[체결 감지] 🔵 매도 그리드 도달: {p_price}원 (현재가 {current_price})")
                         self.record_trade(symbol, p_qty, p_price, p_side, self._get_mode_key(), "filled")
-                        self.delete_position(p_id)
+                        self.delete_position(p_id, cancel_api=False)
+                        self._place_pingpong_order(exchange, symbol, p_side, p_price, p_qty, self._get_mode_key())
                         
                     # 매수 주문: 현재가가 매수 지정가보다 낮거나 같아지면 체결
                     elif p_side == "buy" and current_price <= p_price:
                         logger.info(f"[체결 감지] 🔴 매수 그리드 도달: {p_price}원 (현재가 {current_price})")
                         self.record_trade(symbol, p_qty, p_price, p_side, self._get_mode_key(), "filled")
-                        self.delete_position(p_id)
+                        self.delete_position(p_id, cancel_api=False)
+                        self._place_pingpong_order(exchange, symbol, p_side, p_price, p_qty, self._get_mode_key())
 
                 await asyncio.sleep(3) # 3초마다 감시
             except Exception as e:

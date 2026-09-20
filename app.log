@@ -40,3 +40,18 @@
 2026-09-21 00:15:56,596 - TraderLoop - INFO - Trader Loop is now running...
 2026-09-21 00:15:56,596 - TraderLoop - INFO - 🔄 [자동 동기화] 잔고 및 거래소 미체결 내역 동기화 실행
 2026-09-21 00:15:56,678 - watchfiles.main - INFO - 5 changes detected
+2026-09-21 00:45:57,511 - TraderLoop - INFO - 🔄 [자동 동기화] 잔고 및 거래소 미체결 내역 동기화 실행
+2026-09-21 00:52:52,202 - watchfiles.main - INFO - 1 change detected
+2026-09-21 00:52:52,485 - TraderLoop - INFO - TraderLoop stop requested.
+2026-09-21 00:53:56,129 - TraderLoop - INFO - TraderLoop start requested.
+2026-09-21 00:53:56,189 - watchfiles.main - INFO - 5 changes detected
+2026-09-21 00:53:56,775 - TraderLoop - INFO - Trader Loop is now running...
+2026-09-21 00:53:56,775 - TraderLoop - INFO - 🔄 [자동 동기화] 잔고 및 거래소 미체결 내역 동기화 실행
+2026-09-21 00:54:03,999 - TraderLoop - INFO - [실전투자] 수동 매수 API 접수: 10.0개 @ 10,000원 지정가 / 응답: {'error': {'name': 'over_price_limit_bid', 'message': '주문가격은 최대 2264.00 이하로 주문 가능합니다.'}}
+2026-09-21 00:54:04,458 - TraderLoop - INFO - [실전투자] 수동 매도 API 접수: 10.0개 @ 20,000원 지정가 / 응답: {'error': {'name': 'over_price_limit_ask', 'message': '주문가격은 최대 2264.00 이하로 주문 가능합니다.'}}
+2026-09-21 00:54:04,936 - BithumbAPI - INFO - Cancel Response: {"uuid":"C0907000000292324192","side":"ask","ord_type":"limit","price":"599","state":"wait","market":"KRW-ONDO","created_at":"2026-09-20T23:41:05+09:00","volume":"1000","remaining_volume":"1000","reserved_fee":"0","remaining_fee":"0","paid_fee":"0","locked":"1000","executed_volume":"0","executed_funds":"0","trades_count":0,"stp_type":"cancel_taker"}
+2026-09-21 00:54:05,027 - watchfiles.main - INFO - 3 changes detected
+2026-09-21 00:54:05,515 - BithumbAPI - INFO - Cancel Response: {"uuid":"C0907000000292324195","side":"bid","ord_type":"limit","price":"501","state":"wait","market":"KRW-ONDO","created_at":"2026-09-20T23:41:06+09:00","volume":"1000","remaining_volume":"1000","reserved_fee":"1252.5","remaining_fee":"1252.5","paid_fee":"0","locked":"502253.5","executed_volume":"0","executed_funds":"0","trades_count":0,"stp_type":"cancel_taker"}
+2026-09-21 00:54:05,582 - watchfiles.main - INFO - 3 changes detected
+2026-09-21 00:54:05,603 - TraderLoop - INFO - [bithumb_real] 포지션 및 미체결 주문 일괄 취소 (DB 초기화)
+2026-09-21 00:54:05,943 - watchfiles.main - INFO - 3 changes detected
