@@ -197,7 +197,7 @@ with tab_settings:
         st.success(st.session_state.mode_changed_msg)
         st.session_state.mode_changed_msg = None
 
-    st.divider()
+    pass
 
     # ── 봇 제어 ─────────────────────────────────────
     st.subheader("봇 자동 매매 제어")
@@ -243,144 +243,146 @@ with tab_settings:
         except Exception as e:
             msg_placeholder.error("❌ 명령 전송 실패")
 
-    st.divider()
+    pass
 
     # ── 매매 알고리즘 파라미터 ──────────────────────
 with tab_order:
-    st.subheader("🎛️ 매매 알고리즘 파라미터 (그리드 설정)")
-    cfg              = status_data.get("config", {}) if status_data else {}
-    current_exchange = cfg.get("exchange", "bithumb")
-    ex_cfg           = cfg.get(current_exchange, {})
-    is_kis           = (current_exchange == "kis")
-    default_grid     = 2000 if is_kis else 10
-    default_profit   = 2000 if is_kis else 10
-    default_qty      = 10   if is_kis else 1000
-    step_val         = 50   if is_kis else 1
+    with st.expander("⚙️ 그리드 파라미터 설정 (터치하여 열기/닫기)", expanded=not st.session_state.get("show_grid_preview", False)):
+        st.subheader("🎛️ 매매 알고리즘 파라미터 (그리드 설정)")
+        cfg              = status_data.get("config", {}) if status_data else {}
+        current_exchange = cfg.get("exchange", "bithumb")
+        ex_cfg           = cfg.get(current_exchange, {})
+        is_kis           = (current_exchange == "kis")
+        default_grid     = 2000 if is_kis else 10
+        default_profit   = 2000 if is_kis else 10
+        default_qty      = 10   if is_kis else 1000
+        step_val         = 50   if is_kis else 1
 
-    # 1. 서버조회 (버튼 1개)
-    if st.button("🔄 서버조회 (현재가 & 주문 동기화)", use_container_width=True, help="거래소 미체결 내역과 현재가를 최신으로 동기화합니다."):
-        try:
-            # 현재가 조회
-            sym   = current_sym(cfg)
-            p_res = requests.get(f"{API_URL}/price?exchange={current_exchange}&symbol={sym}", timeout=5)
-            if p_res.status_code == 200:
-                p = p_res.json().get("price", 0)
-                if p > 0:
-                    st.session_state.manual_price = int(p)
+        # 1. 서버조회 (버튼 1개)
+        if st.button("🔄 서버조회 (현재가 & 주문 동기화)", use_container_width=True, help="거래소 미체결 내역과 현재가를 최신으로 동기화합니다."):
+            try:
+                # 현재가 조회
+                sym   = current_sym(cfg)
+                p_res = requests.get(f"{API_URL}/price?exchange={current_exchange}&symbol={sym}", timeout=5)
+                if p_res.status_code == 200:
+                    p = p_res.json().get("price", 0)
+                    if p > 0:
+                        st.session_state.manual_price = int(p)
             
-            # 미체결 주문 동기화
-            s_res = requests.post(f"{API_URL}/order/sync", timeout=10)
-            if s_res.status_code == 200:
-                st.success(s_res.json().get("message", "동기화 완료"))
-            st.rerun()
-        except Exception as e:
-            st.error(f"서버조회 실패: {e}")
+                # 미체결 주문 동기화
+                s_res = requests.post(f"{API_URL}/order/sync", timeout=10)
+                if s_res.status_code == 200:
+                    st.success(s_res.json().get("message", "동기화 완료"))
+                st.rerun()
+            except Exception as e:
+                st.error(f"서버조회 실패: {e}")
 
-    # 2. 매도 간격 / 매도주문 수량 (입력창 가로 2개)
-    col_sell_1, col_sell_2 = st.columns(2)
-    with col_sell_1:
-        take_profit = st.number_input("매도 간격 (수익폭)", min_value=1, value=int(ex_cfg.get("take_profit", default_profit)), step=step_val)
-    with col_sell_2:
-        sell_count  = st.number_input("매도주문 개수", min_value=1, max_value=50, value=10, step=1)
+        # 2. 매도 간격 / 매도주문 수량 (입력창 가로 2개)
+        col_sell_1, col_sell_2 = st.columns(2)
+        with col_sell_1:
+            take_profit = st.number_input("매도 간격 (수익폭)", min_value=1, value=int(ex_cfg.get("take_profit", default_profit)), step=step_val)
+        with col_sell_2:
+            sell_count  = st.number_input("매도주문 개수", min_value=1, max_value=50, value=10, step=1)
 
-    # 3. 기준가 / 1회 매수 수량 (입력창 가로 2개)
-    cached_price = st.session_state.get("manual_price", 0)
-    base_price_val = float(ex_cfg.get("base_price", 0) or cached_price)
+        # 3. 기준가 / 1회 매수 수량 (입력창 가로 2개)
+        cached_price = st.session_state.get("manual_price", 0)
+        base_price_val = float(ex_cfg.get("base_price", 0) or cached_price)
     
-    col_base_1, col_base_2 = st.columns(2)
-    with col_base_1:
-        base_price = st.number_input("기준가", min_value=0.0, value=base_price_val, step=float(step_val), help="0 입력 시 현재가로 자동 적용")
-    with col_base_2:
-        order_quantity = st.number_input("1회 매수 수량", min_value=1, value=int(ex_cfg.get("order_quantity", default_qty)), step=1)
+        col_base_1, col_base_2 = st.columns(2)
+        with col_base_1:
+            base_price = st.number_input("기준가", min_value=0.0, value=base_price_val, step=float(step_val), help="0 입력 시 현재가로 자동 적용")
+        with col_base_2:
+            order_quantity = st.number_input("1회 매수 수량", min_value=1, value=int(ex_cfg.get("order_quantity", default_qty)), step=1)
 
-    # 4. 매수 간격 / 매수주문 수량 (입력창 가로 2개)
-    col_buy_1, col_buy_2 = st.columns(2)
-    with col_buy_1:
-        grid_interval = st.number_input("매수 간격 (하락폭)", min_value=1, value=int(ex_cfg.get("grid_interval", default_grid)), step=step_val)
-    with col_buy_2:
-        buy_count     = st.number_input("매수주문 개수", min_value=1, max_value=50, value=10, step=1)
+        # 4. 매수 간격 / 매수주문 수량 (입력창 가로 2개)
+        col_buy_1, col_buy_2 = st.columns(2)
+        with col_buy_1:
+            grid_interval = st.number_input("매수 간격 (하락폭)", min_value=1, value=int(ex_cfg.get("grid_interval", default_grid)), step=step_val)
+        with col_buy_2:
+            buy_count     = st.number_input("매수주문 개수", min_value=1, max_value=50, value=10, step=1)
 
-    # 5. 주문 방향 (라디오 버튼 3개)
-    grid_direction = st.radio("주문 방향", ["매수/매도 모두", "매수만", "매도만"], index=0, horizontal=True)
+        # 5. 주문 방향 (라디오 버튼 3개)
+        grid_direction = st.radio("주문 방향", ["매수/매도 모두", "매수만", "매도만"], index=0, horizontal=True)
 
-    # ── 그리드 생성 헬퍼 ──
-    def _calc_base_price():
-        if base_price > 0: return base_price
-        if cached_price > 0: return cached_price
-        return 80000 if is_kis else 1000
+        # ── 그리드 생성 헬퍼 ──
+        def _calc_base_price():
+            if base_price > 0: return base_price
+            if cached_price > 0: return cached_price
+            return 80000 if is_kis else 1000
 
-    def _generate_grid(bp, qty):
-        sell_list, buy_list = [], []
-        if grid_direction in ["매도만", "매수/매도 모두"]:
-            for i in range(1, int(sell_count) + 1):
-                s_price = bp + (take_profit * i)
-                s_price = (s_price // 1000) * 1000 + 900 if is_kis else round(s_price, 2)
-                sell_list.append({"선택": True, "방향": "매도", "가격": int(s_price), "수량": int(qty)})
-        if grid_direction in ["매수만", "매수/매도 모두"]:
-            for i in range(1, int(buy_count) + 1):
-                b_price = bp - (grid_interval * i)
-                if b_price <= 0: break
-                b_price = (b_price // 1000) * 1000 + 100 if is_kis else round(b_price, 2)
-                buy_list.append({"선택": True, "방향": "매수", "가격": int(b_price), "수량": int(qty)})
-        return sell_list, buy_list
+        def _generate_grid(bp, qty):
+            sell_list, buy_list = [], []
+            if grid_direction in ["매도만", "매수/매도 모두"]:
+                for i in range(1, int(sell_count) + 1):
+                    s_price = bp + (take_profit * i)
+                    s_price = (s_price // 1000) * 1000 + 900 if is_kis else round(s_price, 2)
+                    sell_list.append({"선택": True, "방향": "매도", "가격": int(s_price), "수량": int(qty)})
+            if grid_direction in ["매수만", "매수/매도 모두"]:
+                for i in range(1, int(buy_count) + 1):
+                    b_price = bp - (grid_interval * i)
+                    if b_price <= 0: break
+                    b_price = (b_price // 1000) * 1000 + 100 if is_kis else round(b_price, 2)
+                    buy_list.append({"선택": True, "방향": "매수", "가격": int(b_price), "수량": int(qty)})
+            return sell_list, buy_list
 
-    # 6. 균등그리드생성 (버튼 1개)
-    if st.button("📝 균등 그리드 생성", use_container_width=True):
-        bp = _calc_base_price()
-        sell_list, buy_list = _generate_grid(bp, order_quantity)
-        st.session_state.grid_sell_list = sell_list
-        st.session_state.grid_buy_list = buy_list
-        st.session_state.show_grid_preview = True
-        st.session_state.confirm_batch_order = False
+        # 6. 균등그리드생성 (버튼 1개)
+        if st.button("📝 균등 그리드 생성", use_container_width=True):
+            bp = _calc_base_price()
+            sell_list, buy_list = _generate_grid(bp, order_quantity)
+            st.session_state.grid_sell_list = sell_list
+            st.session_state.grid_buy_list = buy_list
+            st.session_state.show_grid_preview = True
+            st.session_state.confirm_batch_order = False
 
-    # ── 계단형 그리드 생성 ─────────────────────────
-    st.caption("계단형: 지정한 방향에만 수량을 증액하는 그리드")
-    stair_c1, stair_c2 = st.columns(2)
-    with stair_c1:
-        stair_steps = st.number_input("증액 계단 수량", min_value=1, max_value=10, value=3, step=1, help="몇 단계마다 수량이 증액되는지")
-    with stair_c2:
-        stair_add_qty = st.number_input("증액 수량", min_value=1, value=5 if is_kis else 500, step=1, help="계단 한 단계당 추가되는 수량")
+        # ── 계단형 그리드 생성 ─────────────────────────
+        st.caption("계단형: 지정한 방향에만 수량을 증액하는 그리드")
+        stair_c1, stair_c2 = st.columns(2)
+        with stair_c1:
+            stair_steps = st.number_input("증액 계단 수량", min_value=1, max_value=10, value=3, step=1, help="몇 단계마다 수량이 증액되는지")
+        with stair_c2:
+            stair_add_qty = st.number_input("증액 수량", min_value=1, value=5 if is_kis else 500, step=1, help="계단 한 단계당 추가되는 수량")
 
-    stair_direction = st.radio("계단 적용 방향", ["매수매도계단", "매수계단", "매도계단"], index=1, horizontal=True)
+        stair_direction = st.radio("계단 적용 방향", ["매수매도계단", "매수계단", "매도계단"], index=1, horizontal=True)
 
-    # 8. 계단형그리드생성 (버튼 1개)
-    if st.button("📈 계단형 그리드 생성", use_container_width=True):
-        bp = _calc_base_price()
-        sell_list, buy_list = [], []
-        if grid_direction in ["매도만", "매수/매도 모두"]:
-            for i in range(1, int(sell_count) + 1):
-                s_price = bp + (take_profit * i)
-                s_price = (s_price // 1000) * 1000 + 900 if is_kis else round(s_price, 2)
+        # 8. 계단형그리드생성 (버튼 1개)
+        if st.button("📈 계단형 그리드 생성", use_container_width=True):
+            bp = _calc_base_price()
+            sell_list, buy_list = [], []
+            if grid_direction in ["매도만", "매수/매도 모두"]:
+                for i in range(1, int(sell_count) + 1):
+                    s_price = bp + (take_profit * i)
+                    s_price = (s_price // 1000) * 1000 + 900 if is_kis else round(s_price, 2)
                 
-                if stair_direction in ["매수매도계단", "매도계단"]:
-                    stair_level = (i - 1) // int(stair_steps)
-                    qty = int(order_quantity) + (stair_level * int(stair_add_qty))
-                else:
-                    qty = int(order_quantity)
+                    if stair_direction in ["매수매도계단", "매도계단"]:
+                        stair_level = (i - 1) // int(stair_steps)
+                        qty = int(order_quantity) + (stair_level * int(stair_add_qty))
+                    else:
+                        qty = int(order_quantity)
                     
-                sell_list.append({"선택": True, "방향": "매도", "가격": int(s_price), "수량": qty})
+                    sell_list.append({"선택": True, "방향": "매도", "가격": int(s_price), "수량": qty})
                 
-        if grid_direction in ["매수만", "매수/매도 모두"]:
-            for i in range(1, int(buy_count) + 1):
-                b_price = bp - (grid_interval * i)
-                if b_price <= 0: break
-                b_price = (b_price // 1000) * 1000 + 100 if is_kis else round(b_price, 2)
+            if grid_direction in ["매수만", "매수/매도 모두"]:
+                for i in range(1, int(buy_count) + 1):
+                    b_price = bp - (grid_interval * i)
+                    if b_price <= 0: break
+                    b_price = (b_price // 1000) * 1000 + 100 if is_kis else round(b_price, 2)
                 
-                if stair_direction in ["매수매도계단", "매수계단"]:
-                    stair_level = (i - 1) // int(stair_steps)
-                    qty = int(order_quantity) + (stair_level * int(stair_add_qty))
-                else:
-                    qty = int(order_quantity)
+                    if stair_direction in ["매수매도계단", "매수계단"]:
+                        stair_level = (i - 1) // int(stair_steps)
+                        qty = int(order_quantity) + (stair_level * int(stair_add_qty))
+                    else:
+                        qty = int(order_quantity)
                     
-                buy_list.append({"선택": True, "방향": "매수", "가격": int(b_price), "수량": qty})
+                    buy_list.append({"선택": True, "방향": "매수", "가격": int(b_price), "수량": qty})
 
-        st.session_state.grid_sell_list = sell_list
-        st.session_state.grid_buy_list = buy_list
-        st.session_state.show_grid_preview = True
-        st.session_state.confirm_batch_order = False
+            st.session_state.grid_sell_list = sell_list
+            st.session_state.grid_buy_list = buy_list
+            st.session_state.show_grid_preview = True
+            st.session_state.confirm_batch_order = False
 
-    st.divider()
+    pass
 
+with tab_settings:
     # ── 시스템 공통 설정 ──
     st.subheader("⚙️ 시스템 공통 설정")
     
@@ -501,9 +503,9 @@ with tab_order:
             st.session_state.sym_result_msg = None
             st.rerun()
 
-    st.divider()
+    pass
 
-    st.divider()
+    pass
 
     # 중복 주문 제거 토글창 추가
     remove_dup = st.toggle("중복주문제거", value=True, help="켜져 있을 때는 중복 주문 자동 제거해서 주문해줌. 꺼져 있을 때는 기존과 동일함")
@@ -601,7 +603,7 @@ with tab_dash:
     with c4:
         st.metric("활성 거래중 노드", f"{len(status_data.get('positions', []))} 개")
 
-    st.divider()
+    pass
 
 
     # ── 그리드 주문 프리뷰 ────────────────────────────────
@@ -772,7 +774,7 @@ with tab_order:
                 except Exception:
                     pass
 
-        st.divider()
+        pass
 
     # ── 수동 주문 결과 메시지 ─────────────────────────────
     if st.session_state.get("manual_order_result"):
@@ -887,12 +889,12 @@ with tab_order:
                 st.session_state.confirm_cancel_all = False
                 st.rerun()
 
-    st.divider()
+    pass
 
     # ── 탭 콘텐츠 ─────────────────────────────────────────
 with tab_dash:
 
-    st.markdown("---")
+    pass
     st.subheader("📊 진입 거래망 현황")
     st.subheader("🕸️ 대기 중인 매수/매도 그리드")
     positions = status_data.get("positions", [])
@@ -1011,13 +1013,13 @@ with tab_dash:
 
 
 
-    st.markdown("---")
+    pass
     st.subheader("💸 거래 내역")
     st.subheader("최근 체결 내역")
     st.info("알고리즘 가동 시 실시간으로 기록됩니다.")
     st.dataframe(pd.DataFrame(columns=["시간", "종류", "가격(원)", "수량", "상태"]), use_container_width=True)
 
-    st.markdown("---")
+    pass
     st.subheader("🤖 시스템 상태")
     st.subheader("엔진 구동 상태")
     col_a, col_b = st.columns(2)
