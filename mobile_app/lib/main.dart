@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
-import 'dart:async';
+import 'screens/landing_screen.dart';
 
 void main() {
   runApp(const TradingBotApp());
@@ -18,12 +16,11 @@ class TradingBotApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
         useMaterial3: true,
       ),
-      home: const DashboardScreen(),
+      home: const LandingScreen(),
     );
   }
 }
 
-class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
 
   @override

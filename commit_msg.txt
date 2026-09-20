@@ -1,6 +1,0 @@
-Docs: 코어 엔진 및 대시보드 핵심 로직 상세 한국어 주석 추가
-
-- GEMINI.md 글로벌 룰에 주석 상세화 의무 조항 추가
-- trader_loop.py 내 배터리 절약(Polling), KIS 운영시간, 핑퐁 끝자리 보정 로직 이유 서술
-- kis_api.py 내 24시간 토큰 자동 갱신 및 지수 백오프 방어 기제 목적 서술
-- dashboard.py 상태(session_state) 증발 방지 및 더미 데이터 제어 로직 주석 추가
