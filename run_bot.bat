@@ -1,26 +1,25 @@
 @echo off
-chcp 65001 >nul
 echo ==============================================
 echo       AI Trading Bot - Restart Script
 echo ==============================================
 
 echo [1/2] Cleaning up existing processes...
-:: 8000 포트(FastAPI) 강제 종료
+REM Kill process using port 8000
 for /f "tokens=5" %%a in ('netstat -aon ^| findstr ":8000 "') do (
     taskkill /F /PID %%a 2>nul
 )
 
-:: 8501 포트(Streamlit) 강제 종료
+REM Kill process using port 8501
 for /f "tokens=5" %%a in ('netstat -aon ^| findstr ":8501 "') do (
     taskkill /F /PID %%a 2>nul
 )
 
-:: 8080 포트(Mock Server) 강제 종료
+REM Kill process using port 8080
 for /f "tokens=5" %%a in ('netstat -aon ^| findstr ":8080 "') do (
     taskkill /F /PID %%a 2>nul
 )
 
-:: 포트 반환을 위해 1초 대기
+REM Wait 1 second
 timeout /t 1 /nobreak >nul
 
 echo.
