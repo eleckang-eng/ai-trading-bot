@@ -65,8 +65,10 @@ class _HistoryViewState extends State<HistoryView> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
+    return Scaffold(
+      appBar: AppBar(title: const Text('💸 실시간 거래 내역')),
+      body: Column(
+        children: [
         Padding(
           padding: const EdgeInsets.all(8.0),
           child: Row(
@@ -121,6 +123,7 @@ class _HistoryViewState extends State<HistoryView> {
                     ),
         ),
       ],
+      ),
     );
   }
 }

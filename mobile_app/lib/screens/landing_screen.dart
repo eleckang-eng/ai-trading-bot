@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'main_tab_screen.dart';
 import '../services/remote_api_service.dart';
 import '../services/kis_standalone_service.dart';
@@ -33,7 +33,7 @@ class LandingScreen extends StatelessWidget {
     await engine.init(appKey, appSecret, cano);
     engine.startListening(); // 엔진 로그 시작
 
-    final service = KisStandaloneService(engine.kisApi!);
+    final service = KisStandaloneService(engine.kisApi!, engine: engine);
     Navigator.push(context, MaterialPageRoute(builder: (_) => MainTabScreen(apiService: service, title: "단독 봇 모드 (KIS)")));
   }
 

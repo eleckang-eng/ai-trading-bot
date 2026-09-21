@@ -163,27 +163,37 @@ def manual_order(order: OrderModel):
         return {"status": "error", "message": str(e)}
 
 @app.post("/order/cancel_all")
-def cancel_all_orders():
-    """미체결 주문 일괄 취소"""
-    return trader.cancel_all_orders()
+def cancel_all_orders(force: bool = False):
+    """미체결 주문 일괄 취소
+    - force=True: API 취소 실패 시에도 DB에서 강제 삭제 (장 외 시간 정리용)"""
+    success_count, fail_count = trader.delete_all_positions(force=force)
+    msg = f"{success_count}건 취소 완료"
+    if fail_count > 0:
+        if force:
+            msg += f", {fail_count}건 API 실패 (DB 강제 삭제)"
+        else:
+            msg += f", {fail_count}건 API 실패 (DB 보류 - 증권사에 주문이 살아있을 수 있음)"
+    return {"status": "success" if fail_count == 0 else "partial", "message": msg, "success_count": success_count, "fail_count": fail_count}
 
 class CancelSingleOrderModel(BaseModel):
     order_id: int
+    force: bool = False
 
 @app.post("/order/cancel")
 def cancel_single_order(payload: CancelSingleOrderModel):
     """단건 주문 취소"""
     try:
-        success = trader.delete_position(payload.order_id)
+        success = trader.delete_position(payload.order_id, force=payload.force)
         if success:
-            return {"status": "success", "message": f"{payload.order_id}번 주문이 성공적으로 취소되었습니다."}
+            return {"status": "success", "message": f"{payload.order_id}번 주문이 취소되었습니다."}
         else:
-            return {"status": "error", "message": f"주문 취소에 실패했습니다 (API 오류)."}
+            return {"status": "error", "message": f"API 취소 실패. 증권사에 주문이 살아있을 수 있어 DB 삭제를 보류합니다."}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
 class CancelListModel(BaseModel):
     ids: list[int]
+    force: bool = False
 
 @app.post("/order/cancel_list")
 def cancel_list_orders(payload: CancelListModel):
@@ -192,7 +202,7 @@ def cancel_list_orders(payload: CancelListModel):
     errors = []
     for pid in payload.ids:
         try:
-            success = trader.delete_position(pid)
+            success = trader.delete_position(pid, force=payload.force)
             if success:
                 success_count += 1
             else:
@@ -202,7 +212,8 @@ def cancel_list_orders(payload: CancelListModel):
             
     if errors:
         return {"status": "error", "message": f"{success_count}건 취소 성공, 실패: {', '.join(errors)}"}
-    return {"status": "success", "message": f"{success_count}건의 주문이 성공적으로 취소되었습니다."}
+    return {"status": "success", "message": f"{success_count}건의 주문이 취소되었습니다."}
+
 
 @app.post("/order/sync")
 def sync_orders():
@@ -220,17 +231,16 @@ def clear_trade_history():
     return trader.clear_history()
 
 @app.post("/system/restart")
-def restart_server():
+async def restart_server():
     """봇 코어 루프 재시작"""
-    import threading, time
-    def _restart():
+    import asyncio
+    async def _restart():
         trader.stop()
-        time.sleep(2)  # 스레드 종료 및 정리 대기
-        # 설정 등을 다시 불러오기 위해 필요하다면 여기서 로드
+        await asyncio.sleep(2)  # 루프 종료 대기
         trader.start()
     
-    threading.Thread(target=_restart).start()
+    asyncio.create_task(_restart())
     return {"status": "success", "message": "봇 코어 루프 재시작 중..."}
 
 if __name__ == "__main__":
-    uvicorn.run("api_server:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("api_server:app", host="0.0.0.0", port=8000, reload=False)

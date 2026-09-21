@@ -49,13 +49,76 @@ class RemoteApiService implements BaseApiService {
   }
 
   @override
-  Future<Map<String, dynamic>> cancelOrder(String orderId) async {
+  Future<Map<String, dynamic>> sendBatchOrder(List<Map<String, dynamic>> orders) async {
+    try {
+      final res = await http.post(
+        Uri.parse('${baseUrl}/order/batch'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({"orders": orders}),
+      ).timeout(const Duration(seconds: 30));
+      if (res.statusCode == 200) return jsonDecode(res.body);
+      return {'status': 'error', 'message': 'HTTP ${res.statusCode}'};
+    } catch (e) {
+      return {'status': 'error', 'message': e.toString()};
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> cancelOrder(String id) async {
     try {
       final res = await http.post(
         Uri.parse('${baseUrl}/order/cancel'),
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({"order_id": orderId}),
+        body: jsonEncode({"order_id": int.parse(id)}),
       ).timeout(const Duration(seconds: 10));
+      if (res.statusCode == 200) return jsonDecode(res.body);
+      return {'status': 'error', 'message': 'HTTP ${res.statusCode}'};
+    } catch (e) {
+      return {'status': 'error', 'message': e.toString()};
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> cancelList(List<int> ids) async {
+    try {
+      final res = await http.post(
+        Uri.parse('${baseUrl}/order/cancel_list'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({"ids": ids}),
+      ).timeout(const Duration(seconds: 15));
+      if (res.statusCode == 200) return jsonDecode(res.body);
+      return {'status': 'error', 'message': 'HTTP ${res.statusCode}'};
+    } catch (e) {
+      return {'status': 'error', 'message': e.toString()};
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> startBot() async {
+    try {
+      final res = await http.post(Uri.parse('${baseUrl}/start')).timeout(const Duration(seconds: 10));
+      if (res.statusCode == 200) return jsonDecode(res.body);
+      return {'status': 'error', 'message': 'HTTP ${res.statusCode}'};
+    } catch (e) {
+      return {'status': 'error', 'message': e.toString()};
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> stopBot() async {
+    try {
+      final res = await http.post(Uri.parse('${baseUrl}/stop')).timeout(const Duration(seconds: 10));
+      if (res.statusCode == 200) return jsonDecode(res.body);
+      return {'status': 'error', 'message': 'HTTP ${res.statusCode}'};
+    } catch (e) {
+      return {'status': 'error', 'message': e.toString()};
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> restartBot() async {
+    try {
+      final res = await http.post(Uri.parse('${baseUrl}/system/restart')).timeout(const Duration(seconds: 10));
       if (res.statusCode == 200) return jsonDecode(res.body);
       return {'status': 'error', 'message': 'HTTP ${res.statusCode}'};
     } catch (e) {

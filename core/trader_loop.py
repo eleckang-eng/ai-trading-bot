@@ -252,7 +252,8 @@ class TraderLoop:
                             calibrated_profit = float(out2[0].get("rlzt_pfls_amt", out2[0].get("tot_rlzt_pfls_amt", total_profit)))
                             total_profit = calibrated_profit
                 except Exception as e:
-                    self.logger.error(f"실현손익 API 캘리브레이션 실패: {e}")
+                    # self.logger가 아닌 모듈 레벨 logger 사용 (TraderLoop에 logger 인스턴스 속성 없음)
+                    logger.error(f"실현손익 API 캘리브레이션 실패: {e}")
 
         return total_profit, today_trade_count
 
@@ -303,40 +304,73 @@ class TraderLoop:
             raise e
         return True
 
-    def delete_position(self, position_id, cancel_api=True):
+    def delete_position(self, position_id, cancel_api=True, force=False):
+        """개별 포지션 취소 및 삭제
+        - cancel_api=True: 증권사 취소 API를 먼저 호출
+        - force=True: API 취소 실패 여부와 관계없이 DB에서 강제 삭제 (장 외 시간 정리용)
+        - force=False (기본): API 취소 실패 시 DB 삭제 보류 (증권사에 주문이 살아있을 수 있으므로)"""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute('SELECT exchange_mode, order_id, symbol, quantity, buy_price, side FROM grid_bullets WHERE id = ?', (position_id,))
             row = cursor.fetchone()
             if row:
                 ex_mode, order_id, symbol, qty, price, side = row
-                if cancel_api:
+                if cancel_api and order_id:
                     try:
                         self._cancel_order_via_api(ex_mode, order_id, symbol)
                         self.record_trade(symbol, qty, price, side, ex_mode, "canceled")
                     except Exception as e:
-                        logger.error(f"주문 취소 API 에러로 DB 삭제 보류 (ID: {position_id})")
-                        return False # 에러 시 DB 삭제 보류
+                        logger.error(f"API 취소 실패 (ID: {position_id}, ODNO: {order_id}): {e}")
+                        if not force:
+                            # 증권사에 주문이 살아있을 수 있으므로 DB 삭제 보류
+                            return False
+                        # force=True: 사용자가 명시적으로 강제 삭제를 요청한 경우
+                        logger.warning(f"강제 삭제 모드: DB에서 제거합니다 (ID: {position_id})")
+                        self.record_trade(symbol, qty, price, side, ex_mode, "force_canceled")
+                else:
+                    self.record_trade(symbol, qty, price, side, ex_mode, "canceled")
             conn.execute('DELETE FROM grid_bullets WHERE id = ?', (position_id,))
             conn.commit()
         return True
 
-    def delete_all_positions(self):
-        """현재 모드의 포지션 일괄 취소 및 삭제"""
+    def delete_all_positions(self, force=False):
+        """현재 모드의 포지션 일괄 취소 및 삭제
+        - force=False (기본): API 취소 성공한 것만 DB에서 삭제, 실패한 것은 보류
+        - force=True: API 실패 여부와 관계없이 전부 DB에서 삭제"""
+        import time
         mode_key = self._get_mode_key()
+        success_count = 0
+        fail_count = 0
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute('SELECT id, order_id, symbol, quantity, buy_price, side FROM grid_bullets WHERE exchange_mode = ?', (mode_key,))
             rows = cursor.fetchall()
             for r in rows:
                 p_id, o_id, sym, qty, price, side = r
-                try:
-                    self._cancel_order_via_api(mode_key, o_id, sym)
+                api_ok = False
+                if o_id:
+                    try:
+                        self._cancel_order_via_api(mode_key, o_id, sym)
+                        api_ok = True
+                        success_count += 1
+                    except Exception as e:
+                        fail_count += 1
+                        logger.error(f"API 취소 실패 (ODNO: {o_id}): {e}")
+                    time.sleep(0.3)
+                else:
+                    api_ok = True
+                    success_count += 1
+                
+                if api_ok:
                     self.record_trade(sym, qty, price, side, mode_key, "canceled")
                     conn.execute('DELETE FROM grid_bullets WHERE id = ?', (p_id,))
-                except Exception as e:
-                    logger.error(f"일괄 취소 실패 (ODNO: {o_id}): {e}. DB 삭제 보류.")
+                elif force:
+                    self.record_trade(sym, qty, price, side, mode_key, "force_canceled")
+                    conn.execute('DELETE FROM grid_bullets WHERE id = ?', (p_id,))
+                    logger.warning(f"강제 삭제: ODNO {o_id} (ID: {p_id})")
+                # else: DB 삭제 보류 (증권사에 주문이 살아있을 수 있음)
             conn.commit()
+        return success_count, fail_count
 
 
     def update_balance(self):
@@ -420,7 +454,9 @@ class TraderLoop:
             for k, v in self.config.items():
                 val_str = json.dumps(v)
                 conn.execute("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", (k, val_str))
-                
+            # 명시적 커밋: 예외 발생 시 롤백 방지 및 타 메서드와의 일관성 유지
+            conn.commit()
+            
         return self.config
         
     def manual_order(self, side, quantity, price=None):
@@ -481,9 +517,9 @@ class TraderLoop:
     def cancel_all_orders(self):
         """현재 모드의 미체결 주문 일괄 취소 및 DB 초기화"""
         mode_key = self._get_mode_key()
-        self.delete_all_positions()
-        logger.info(f"[{mode_key}] 포지션 및 미체결 주문 일괄 취소 (DB 초기화)")
-        return {"status": "success", "message": f"미체결 주문 및 포지션이 초기화되었습니다. ({mode_key})"}
+        success_count, fail_count = self.delete_all_positions()
+        logger.info(f"[{mode_key}] 포지션 및 미체결 주문 일괄 취소 (성공: {success_count}, API실패: {fail_count})")
+        return {"status": "success", "message": f"{success_count}건 취소 완료 (API실패 {fail_count}건은 DB에서 강제 제거)", "success_count": success_count, "fail_count": fail_count}
 
     def _place_pingpong_order(self, exchange, symbol, filled_side, filled_price, qty, mode_key):
         """체결된 주문의 반대 방향으로 핑퐁 주문(그리드 간격 * 2)을 생성하고 틱 보정 규칙을 적용합니다."""
@@ -663,28 +699,43 @@ class TraderLoop:
     async def run_loop(self):
         logger.info("Trader Loop is now running...")
         
+        import time  # 루프 밖에서 1회만 임포트 (루프 내 반복 임포트 방지)
         last_sync_time = 0  # 초기값을 0으로 두어 시작 직후 즉시 동기화 실행되도록 함
 
         while self.running:
             try:
-                import time
+                import datetime
+                now = datetime.datetime.now()
+                exchange = self.config.get("exchange", "kis")
+                
+                # 한국투자증권(kis)인 경우 08:00 ~ 20:00 에만 동기화 및 매매 실행 (주간+넥스트장 포함)
+                if exchange == "kis":
+                    if now.hour < 8 or now.hour >= 20:
+                        # 비거래 시간에는 1분(60초)마다 루프를 돌되 아무 작업도 하지 않음
+                        await asyncio.sleep(60)
+                        continue
+
                 current_time = time.time()
                 
-                # 설정된 주기(기본 30분)마다 잔고 및 서버 미체결 내역 자동 동기화
-                sync_interval_mins = int(self.config.get("auto_sync_interval", 30))
+                symbol = self.config.get("symbol", "042660")
+                mock_mode = self.config.get("mock_mode", True)
+                
+                # 설정된 주기(기본 1분)마다 잔고 및 서버 미체결 내역 자동 동기화
+                sync_interval_mins = int(self.config.get("auto_sync_interval", 1))
                 sync_interval_secs = sync_interval_mins * 60
                 
                 if current_time - last_sync_time >= sync_interval_secs:
-                    logger.info("🔄 [자동 동기화] 잔고 및 거래소 미체결 내역 동기화 실행")
-                    # 잔고 동기화 (느린 API 호출)
-                    self.update_balance()
-                    # 미체결 주문 동기화 (느린 API 호출)
-                    self.sync_orders()
+                    # DB에 활성화된 미체결 포지션이 있는지 확인
+                    active_positions = self.get_positions()
+                    
+                    if not active_positions:
+                        logger.info("🔄 [자동 동기화 스킵] 활성화된 포지션(미체결 주문)이 없어 동기화를 건너뜁니다.")
+                    else:
+                        logger.info("🔄 [자동 동기화] 잔고 및 거래소 미체결 내역 동기화 실행")
+                        self.update_balance()
+                        self.sync_orders()
+                    
                     last_sync_time = current_time
-
-                exchange = self.config.get("exchange", "kis")
-                symbol = self.config.get("symbol", "042660")
-                mock_mode = self.config.get("mock_mode", True)
                 
                 ex_cfg = self.config.get(exchange, {})
                 grid_interval = ex_cfg.get("grid_interval", 2000 if exchange == "kis" else 10)

@@ -122,6 +122,7 @@ class KISClient(BaseExchange):
             "ORD_DVSN": "00", # 00: 지정가
             "ORD_QTY": str(quantity),
             "ORD_UNPR": str(price),
+            "EXG_DVSN_CD": "NXT", # 넥스트레이드(NXT) 전용 시장 코드로 강제 지정
         }
         
         max_retries = 5
@@ -213,12 +214,15 @@ class KISClient(BaseExchange):
 
     def cancel_order(self, order_id: str, symbol: str = "042660"):
         """
-        주식 주문 취소 (TTTC0803U / VTTC0803U)
+        주식 주문 취소 (TTTC0803U: 실전 / VTTC0803U: 모의)
         - order_id: 취소할 원주문번호 (ODNO)
+        - 빈 응답 방어: 증권사가 빈 body를 반환하면 JSONDecodeError 대신 에러 dict 반환
         """
-        path = "/uapi/domestic-stock/v1/trading/order-rvsecnml"
+        # 모의투자/실전 자동 판별 (url_base에 'vts' 포함 여부)
+        tr_id = "VTTC0803U" if "vts" in self.url_base else "TTTC0803U"
+        path = "/uapi/domestic-stock/v1/trading/order-rvsecncl"
         url = f"{self.url_base}{path}"
-        headers = self._get_headers("TTTC0803U")
+        headers = self._get_headers(tr_id)
         body = {
             "CANO": self.cano,
             "ACNT_PRDT_CD": self.acnt_prdt_cd,
@@ -233,5 +237,9 @@ class KISClient(BaseExchange):
         }
         import json
         res = requests.post(url, headers=headers, data=json.dumps(body))
-        print(f"KIS Cancel Response: {res.text}")
+        print(f"KIS Cancel Response ({tr_id}): status={res.status_code}, body={res.text[:200]}")
+        # 빈 응답 방어: body가 비어있으면 json 파싱 불가하므로 에러 dict 반환
+        if not res.text or not res.text.strip():
+            return {"rt_cd": "9", "msg_cd": "EMPTY_RESPONSE", "msg1": f"증권사 서버 빈 응답 (HTTP {res.status_code})"}
         return res.json()
+

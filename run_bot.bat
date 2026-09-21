@@ -1,33 +1,28 @@
 @echo off
+setlocal
+
 echo ==============================================
-echo       AI Trading Bot - Restart Script
+echo       AI Trading Bot - Start Script
 echo ==============================================
 
-echo [1/2] Cleaning up existing processes...
-REM Kill process using port 8000
-for /f "tokens=5" %%a in ('netstat -aon ^| findstr ":8000 "') do (
-    taskkill /F /PID %%a 2>nul
-)
+set "ROOT=%~dp0"
+set "PYTHON=%ROOT%venv\Scripts\python.exe"
 
-REM Kill process using port 8501
-for /f "tokens=5" %%a in ('netstat -aon ^| findstr ":8501 "') do (
-    taskkill /F /PID %%a 2>nul
-)
+echo [1/3] Stopping existing processes...
+for /f "tokens=5" %%a in ('netstat -aon ^| findstr ":8000 "') do taskkill /F /PID %%a 2>nul
+for /f "tokens=5" %%a in ('netstat -aon ^| findstr ":8501 "') do taskkill /F /PID %%a 2>nul
+timeout /t 1 /nobreak > nul
 
-REM Kill process using port 8080
-for /f "tokens=5" %%a in ('netstat -aon ^| findstr ":8080 "') do (
-    taskkill /F /PID %%a 2>nul
-)
+echo [2/3] Starting FastAPI Backend (Port 8000)...
+start "API Server" cmd /k "cd /d "%ROOT%server" && "%PYTHON%" api_server.py"
 
-REM Wait 1 second
-timeout /t 1 /nobreak >nul
+timeout /t 2 /nobreak > nul
+
+echo [3/3] Starting Streamlit Dashboard (Port 8501)...
+start "Dashboard" cmd /k "%PYTHON% -m streamlit run "%ROOT%app\dashboard.py" --server.port=8501"
 
 echo.
-echo [2/2] Starting AI Trading Bot Suite (main.py)...
-start cmd /k "python main.py"
-
-echo.
-echo The entire trading suite (API, UI, Mock Exchange) has been restarted!
-echo You can now access the dashboard at: http://localhost:8501
+echo Server started successfully!
+echo Dashboard: http://localhost:8501
 echo.
 pause

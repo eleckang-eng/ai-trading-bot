@@ -19,15 +19,14 @@ import time
 st.set_page_config(page_title="AI 핑퐁 봇", page_icon="📈", layout="wide", initial_sidebar_state="auto")
 
 # 모바일 환경에서 화면 핀치 줌(확대/축소)을 허용하는 JS 주입
-import streamlit.components.v1 as components
-components.html('''
+st.html('''
 <script>
     const meta = window.parent.document.querySelector('meta[name="viewport"]');
     if (meta) {
         meta.setAttribute("content", "width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes");
     }
 </script>
-''', height=0)
+''')
 
 API_URL = "http://127.0.0.1:8000"
 
@@ -133,13 +132,29 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+if hasattr(st, "dialog"):
+    @st.dialog("알림")
+    def show_alert_dialog(msg, state_key):
+        st.write(msg)
+        if st.button("확인", use_container_width=True):
+            st.session_state[state_key] = None
+            st.rerun()
+else:
+    def show_alert_dialog(msg, state_key):
+        st.info(msg)
+        if st.button("확인", use_container_width=True):
+            st.session_state[state_key] = None
+            st.rerun()
+
 def fetch_status():
     try:
-        r = requests.get(f"{API_URL}/status", timeout=1)
+        r = requests.get(f"{API_URL}/status", timeout=5)
         if r.status_code == 200:
             return r.json()
-    except Exception:
-        pass
+    except requests.exceptions.Timeout:
+        st.toast("서버 응답 지연 (API 요청 중입니다...)")
+    except Exception as e:
+        st.toast(f"서버 연결 오류: {e}")
     return None
 
 def current_sym(cfg):
@@ -149,8 +164,11 @@ def current_sym(cfg):
 status_data = fetch_status()
 
 if not status_data:
-    st.error("백엔드 서버(FastAPI)에 연결할 수 없습니다.")
-    st.info("터미널에서 `python main.py` 를 실행하여 서버를 시작해 주세요.")
+    st.error("백엔드 서버(FastAPI)에 연결할 수 없거나 응답이 지연되고 있습니다.")
+    st.info("증권사 API 통신으로 인해 일시적으로 응답이 지연될 수 있습니다. 새로고침을 눌러 다시 시도해 주세요.")
+    st.info("터미널에서 `python server/api_server.py` 가 실행 중인지 확인하세요.")
+    if st.button("🔄 다시 시도"):
+        st.rerun()
     st.stop()
 
 current_cfg = status_data.get("config", {})
@@ -1004,13 +1022,9 @@ with tab_order:
     # ── 수동 주문 결과 메시지 ─────────────────────────────
     if st.session_state.get("manual_order_result"):
         res_info = st.session_state.manual_order_result
-        if res_info["ok"]:
-            st.success(res_info["msg"])
-        else:
-            st.error(res_info["msg"])
-        if st.button("✔️ 닫기", key="close_manual_result"):
-            st.session_state.manual_order_result = None
-            st.rerun()
+        prefix = "✅" if res_info["ok"] else "❌"
+        show_alert_dialog(f"{prefix} {res_info['msg']}", "manual_order_result")
+        st.stop() # 팝업을 띄우고 아래 내용 렌더링을 멈춤 (확인 누르면 갱신)
 
     # ── 수동 주문 제어 ────────────────────────────────────
     col_t1, col_t2 = st.columns([3, 1])
@@ -1339,16 +1353,11 @@ with tab_dash:
                 except Exception as e:
                     # 증권사 API 오류가 아닌 백엔드 서버 자체가 죽었거나 인터넷이 끊긴 경우
                     st.error(f"❌ {len(ids_to_cancel)}건 주문 취소 처리 실패 (사유: 서버 응답 없음 또는 네트워크 에러 - {e})")
-                    
-        if st.session_state.get("dash_cancel_msg"):
-            if st.session_state.dash_cancel_msg.startswith("❌"):
-                st.error(st.session_state.dash_cancel_msg)
-            else:
-                st.success(st.session_state.dash_cancel_msg)
-            if st.button("확인", key="ok_dash_cancel"):
-                st.session_state.dash_cancel_msg = None
-                st.rerun()
-    else:
+    if st.session_state.get("dash_cancel_msg"):
+        show_alert_dialog(st.session_state.dash_cancel_msg, "dash_cancel_msg")
+        st.stop() # 팝업을 띄우고 아래 내용 렌더링을 멈춤 (확인 누르면 갱신)
+        
+    if not positions:
         st.info("활성화된 포지션이 없습니다.")
 
 
@@ -1412,7 +1421,7 @@ with tab_history:
                         "수량": f"{float(h['quantity']):,g}",
                         "상태": status_str
                     })
-                st.dataframe(pd.DataFrame(formatted_history), use_container_width=True, hide_index=True)
+                st.dataframe(pd.DataFrame(formatted_history), hide_index=True)
             else:
                 st.info("아직 기록된 체결 또는 취소 내역이 없습니다.")
         else:
